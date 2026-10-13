@@ -8,7 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import Vidraceiro
-from .serializers import CadastroSerializer, LoginSerializer, VidraceiroSerializer
+from .serializers import CadastroSerializer, LoginSerializer, PrecosPadraoSerializer, VidraceiroSerializer
 
 
 def _resposta_com_tokens(vidraceiro, http_status):
@@ -73,6 +73,15 @@ class MeView(generics.RetrieveAPIView):
     """GET /api/v1/vidraceiros/me/  (exige token)"""
 
     serializer_class = VidraceiroSerializer
+
+    def get_object(self):
+        return self.request.user
+
+
+class PrecosPadraoView(generics.RetrieveUpdateAPIView):
+    """GET / PATCH /api/v1/vidraceiros/me/precos/  (exige token)"""
+
+    serializer_class = PrecosPadraoSerializer
 
     def get_object(self):
         return self.request.user

@@ -1,6 +1,8 @@
 import uuid
 
-from django.db.models import Count, Sum
+import re
+
+from django.db.models import Count, Q, Sum
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -9,19 +11,27 @@ from rest_framework.response import Response
 
 from .calculo import calcular_projeto
 from .models import Projeto
-from .serializers import CAMPOS_PRECO, CalculoSerializer, ProjetoResumoSerializer, ProjetoSerializer
+from .serializers import (
+    CAMPOS_PRECO,
+    CalculoSerializer,
+    ProjetoResumoSerializer,
+    ProjetoSerializer,
+    padroes_do_vidraceiro,
+)
 
 
 class ProjetoViewSet(viewsets.ModelViewSet):
     """
     GET    /api/v1/projetos/             projetos do vidraceiro logado (resumo)
+             ?busca=maria                por nome do projeto, número do orçamento,
+                                         nome/empresa, celular ou CPF/CNPJ do cliente
     POST   /api/v1/projetos/             cria (idempotente pelo id gerado no app)
     GET    /api/v1/projetos/<id>/        completo, com as peças e os itens
     PUT    /api/v1/projetos/<id>/        substitui (inclusive as peças)
     DELETE /api/v1/projetos/<id>/        arquiva
     POST   /api/v1/projetos/calcular/    custo e lista de compra, sem salvar
     GET    /api/v1/projetos/<id>/calculo/  custo e lista de compra do projeto salvo
-    GET    /api/v1/projetos/padroes/     margem e mão de obra do último projeto, para
+    GET    /api/v1/projetos/padroes/     padrões de preço do vidraceiro, para
                                          preencher um projeto novo
     POST   /api/v1/projetos/<id>/status/ {"status": "enviado" | "aprovado" | "recusado" | "rascunho"}
     """
@@ -35,6 +45,9 @@ class ProjetoViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Projeto.objects.filter(vidraceiro=self.request.user, ativo=True).select_related("cliente")
         if self.action == "list":
+            busca = self.request.query_params.get("busca", "").strip()
+            if busca:
+                qs = qs.filter(_filtro_busca(busca))
             return qs.annotate(total_pecas=Sum("linhas__quantidade"))
         return qs.prefetch_related("linhas__itens__item")
 
@@ -90,20 +103,29 @@ class ProjetoViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def padroes(self, request):
-        ultimo = (
-            Projeto.objects.filter(vidraceiro=request.user)
-            .order_by("-criado_em")
-            .first()
-        )
-        modelo = ultimo or Projeto()  # sem projetos: valores padrão do model
-        return Response({
-            "perda_percentual": str(modelo.perda_percentual),
-            **{c: str(getattr(modelo, c)) for c in CAMPOS_PRECO},
-        })
+        return Response(padroes_do_vidraceiro(request.user))
 
     @action(detail=True, methods=["get"])
     def calculo(self, request, pk=None):
         return Response(calcular_projeto_salvo(self.get_object()))
+
+
+def _filtro_busca(busca):
+    """Um único texto que procura em vários campos ao mesmo tempo."""
+    filtro = (
+        Q(nome__icontains=busca)
+        | Q(cliente__nome__icontains=busca)
+        | Q(cliente__empresa__icontains=busca)
+    )
+    # Celular e CPF/CNPJ são guardados só com dígitos: "(84) 9999" vira "849999".
+    digitos = re.sub(r"[^0-9]", "", busca)
+    if len(digitos) >= 4:
+        # A partir de 4 dígitos: trecho de celular ou de CPF/CNPJ.
+        filtro |= Q(cliente__celular__contains=digitos) | Q(cliente__cpf_cnpj__contains=digitos)
+    if digitos and len(digitos) <= 6:
+        # "12", "nº 12" ou "#12": número do orçamento (exato).
+        filtro |= Q(numero=int(digitos))
+    return filtro
 
 
 def calcular_projeto_salvo(projeto):

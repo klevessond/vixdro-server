@@ -18,6 +18,20 @@ CAMPOS_PRECO = ("margem_percentual", "mao_de_obra_m2", "mao_de_obra_minima",
                 "descricao_adicional", "valor_adicional", "desconto", "validade_dias")
 
 
+def padroes_do_vidraceiro(v):
+    """Valores com que um projeto novo nasce, vindos da tela "Preços e margem"."""
+    return {
+        "perda_percentual": str(v.perda_padrao),
+        "margem_percentual": str(v.margem_padrao),
+        "mao_de_obra_m2": str(v.mao_de_obra_m2_padrao),
+        "mao_de_obra_minima": str(v.mao_de_obra_minima_padrao),
+        "descricao_adicional": "Instalação",
+        "valor_adicional": "0",
+        "desconto": "0",
+        "validade_dias": str(v.validade_padrao),
+    }
+
+
 def _validar_regra(attrs):
     if all(attrs.get(c, 0) == 0 for c in CAMPOS_REGRA):
         raise serializers.ValidationError(f"Defina a regra de consumo de {attrs['item'].descricao}.")
@@ -137,6 +151,9 @@ class ProjetoSerializer(serializers.ModelSerializer):
         # mesmo tempo não ganharem o mesmo número.
         get_user_model().objects.select_for_update().filter(pk=usuario.pk).first()
         ultimo = Projeto.objects.filter(vidraceiro=usuario).aggregate(m=Max("numero"))["m"] or 0
+        # O que o app não mandou vem dos padrões do vidraceiro.
+        for campo, valor in padroes_do_vidraceiro(usuario).items():
+            validated_data.setdefault(campo, valor)
         projeto = Projeto.objects.create(vidraceiro=usuario, numero=ultimo + 1, **validated_data)
         self._salvar_linhas(projeto, linhas)
         return projeto

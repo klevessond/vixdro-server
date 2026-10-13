@@ -114,3 +114,7 @@ SIMPLE_JWT = {
 }
 
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=Csv())
+
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
+

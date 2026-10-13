@@ -88,3 +88,18 @@ class LoginSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
         data["vidraceiro"] = VidraceiroSerializer(self.user).data
         return data
+
+
+class PrecosPadraoSerializer(serializers.ModelSerializer):
+    """Padrões de preço do vidraceiro (tela "Preços e margem" do app)."""
+
+    margem_padrao = serializers.DecimalField(max_digits=6, decimal_places=2, min_value=0, max_value=1000)
+    mao_de_obra_m2_padrao = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0)
+    mao_de_obra_minima_padrao = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0)
+    perda_padrao = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=0, max_value=50)
+    validade_padrao = serializers.IntegerField(min_value=1, max_value=365)
+
+    class Meta:
+        model = Vidraceiro
+        fields = ("margem_padrao", "mao_de_obra_m2_padrao", "mao_de_obra_minima_padrao",
+                  "perda_padrao", "validade_padrao")

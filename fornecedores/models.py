@@ -1,4 +1,9 @@
+from io import BytesIO
+from pathlib import Path
+
+from django.core.files.base import ContentFile
 from django.db import models
+from PIL import Image
 
 ADAPTADORES = [
     ("padrao_vixdro", "Padrão vixdro (pacote integracao_vixdro)"),
@@ -64,6 +69,12 @@ class ItemFornecedor(models.Model):
     # desativar itens que sumiram da lista do fornecedor.
     visto_em = models.DateTimeField()
 
+    # Imagem enviada pela equipe do vixdro pelo admin. A sincronização com o
+    # fornecedor nunca mexe nestes campos.
+    imagem = models.ImageField(upload_to="catalogo/", blank=True,
+                               help_text="Foto ou desenho do perfil. A miniatura é gerada sozinha.")
+    miniatura = models.ImageField(upload_to="catalogo/miniaturas/", blank=True, editable=False)
+
     class Meta:
         verbose_name = "item do fornecedor"
         verbose_name_plural = "itens dos fornecedores"
@@ -78,6 +89,23 @@ class ItemFornecedor(models.Model):
     @property
     def vendido_por_comprimento(self):
         return self.comprimento_mm is not None
+
+    def gerar_miniatura(self, lado=300):
+        """Cria a miniatura (até 300 px) a partir da imagem principal."""
+        if not self.imagem:
+            self.miniatura = ""
+            return
+        self.imagem.open()
+        with Image.open(self.imagem) as original:
+            img = original.copy()
+        img.thumbnail((lado, lado))
+        # Desenhos técnicos costumam ter fundo transparente: PNG preserva isso.
+        if img.mode not in ("RGB", "RGBA"):
+            img = img.convert("RGBA")
+        buffer = BytesIO()
+        img.save(buffer, format="PNG", optimize=True)
+        nome = f"{Path(self.imagem.name).stem}_mini.png"
+        self.miniatura.save(nome, ContentFile(buffer.getvalue()), save=False)
 
 
 class Sincronizacao(models.Model):

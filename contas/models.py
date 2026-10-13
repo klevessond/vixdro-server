@@ -50,6 +50,14 @@ class Vidraceiro(AbstractBaseUser, PermissionsMixin):
     cidade = models.CharField(max_length=100)
     estado = models.CharField(max_length=2, choices=UF_CHOICES)
 
+    # Padrões de preço: todo projeto novo nasce com estes valores (e eles
+    # podem ser ajustados em cada projeto). O cliente final nunca os vê.
+    margem_padrao = models.DecimalField("margem sobre o material (%)", max_digits=6, decimal_places=2, default=30)
+    mao_de_obra_m2_padrao = models.DecimalField("mão de obra por m²", max_digits=10, decimal_places=2, default=0)
+    mao_de_obra_minima_padrao = models.DecimalField("mão de obra mínima por peça", max_digits=10, decimal_places=2, default=0)
+    perda_padrao = models.DecimalField("perda no corte (%)", max_digits=5, decimal_places=2, default=10)
+    validade_padrao = models.PositiveIntegerField("validade do orçamento (dias)", default=15)
+
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     criado_em = models.DateTimeField(auto_now_add=True)
