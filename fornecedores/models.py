@@ -7,6 +7,7 @@ from PIL import Image
 
 ADAPTADORES = [
     ("padrao_vixdro", "Padrão vixdro (pacote integracao_vixdro)"),
+    ("proprio", "Itens próprios de um vidraceiro (sem integração)"),
 ]
 
 
@@ -16,10 +17,18 @@ class Fornecedor(models.Model):
     nome = models.CharField(max_length=150)
     slug = models.SlugField(unique=True, help_text="Identificador curto, ex: aluminio-serido")
     adaptador = models.CharField(max_length=50, choices=ADAPTADORES, default="padrao_vixdro")
+    # Preenchido só no "fornecedor" que guarda os itens próprios de um
+    # vidraceiro (vidros, por exemplo). Só esse vidraceiro enxerga esses itens.
+    vidraceiro = models.ForeignKey(
+        "contas.Vidraceiro", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="fornecedores_proprios", editable=False,
+    )
     url_base = models.URLField(
+        blank=True,
         help_text="Endereço da API do fornecedor, terminando em /. Ex: http://localhost:8001/api/vixdro/v1/"
     )
     variavel_chave = models.CharField(
+        blank=True,
         max_length=100,
         help_text="Nome da variável do .env que guarda a chave de acesso. "
         "A chave nunca fica no banco. Ex: FORNECEDOR_SERIDO_CHAVE",
@@ -139,3 +148,26 @@ class Sincronizacao(models.Model):
 
     def __str__(self):
         return f"{self.fornecedor} - {self.get_tipo_display()} - {self.inicio:%d/%m/%Y %H:%M}"
+
+
+# ---------- Visibilidade e itens próprios ----------
+
+def fornecedores_visiveis(usuario):
+    """Os fornecedores reais (de todos) mais o de itens próprios DESTE vidraceiro."""
+    return Fornecedor.objects.filter(ativo=True).filter(
+        models.Q(vidraceiro__isnull=True) | models.Q(vidraceiro=usuario)
+    )
+
+
+def item_visivel(item, usuario):
+    """Um vidraceiro nunca pode usar o item próprio de outro."""
+    return item.fornecedor.vidraceiro_id in (None, usuario.pk)
+
+
+def fornecedor_proprio(usuario):
+    """O "fornecedor" dos itens próprios do vidraceiro (criado na primeira vez)."""
+    obj, _ = Fornecedor.objects.get_or_create(
+        vidraceiro=usuario,
+        defaults={"nome": "Meus itens", "slug": f"proprio-{usuario.pk}", "adaptador": "proprio"},
+    )
+    return obj

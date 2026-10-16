@@ -95,7 +95,7 @@ class ProjetoViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"])
     def calcular(self, request):
-        s = CalculoSerializer(data=request.data)
+        s = CalculoSerializer(data=request.data, context={"request": request})
         s.is_valid(raise_exception=True)
         d = s.validated_data
         precificacao = {c: d[c] for c in CAMPOS_PRECO if c in d}
@@ -136,7 +136,8 @@ def calcular_projeto_salvo(projeto):
             "quantidade": ln.quantidade,
             "itens": [
                 {"item": it.item, "coef_largura": it.coef_largura, "coef_altura": it.coef_altura,
-                 "coef_area": it.coef_area, "ajuste": it.ajuste, "observacao": it.observacao}
+                 "coef_area": it.coef_area, "ajuste": it.ajuste, "observacao": it.observacao,
+                 "cobranca": it.cobranca}
                 for it in ln.itens.all()
             ],
         }

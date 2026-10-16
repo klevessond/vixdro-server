@@ -13,16 +13,12 @@ class Command(BaseCommand):
         parser.add_argument("--fornecedor", help="slug de um fornecedor específico")
 
     def handle(self, *args, **opcoes):
-        fornecedores = Fornecedor.objects.filter(ativo=True)
+        # Itens próprios dos vidraceiros não têm de onde sincronizar.
+        fornecedores = Fornecedor.objects.filter(ativo=True, vidraceiro__isnull=True)
         if opcoes["fornecedor"]:
             fornecedores = fornecedores.filter(slug=opcoes["fornecedor"])
             if not fornecedores.exists():
                 raise CommandError(f"Fornecedor ativo '{opcoes['fornecedor']}' não encontrado.")
-        if not fornecedores.exists():
-            self.stdout.write(self.style.WARNING(
-                "Nenhum fornecedor ativo cadastrado. Cadastre em /admin/, na seção Fornecedores."
-            ))
-            return
 
         houve_erro = False
         for f in fornecedores:

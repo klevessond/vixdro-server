@@ -58,6 +58,9 @@ class Vidraceiro(AbstractBaseUser, PermissionsMixin):
     perda_padrao = models.DecimalField("perda no corte (%)", max_digits=5, decimal_places=2, default=10)
     validade_padrao = models.PositiveIntegerField("validade do orçamento (dias)", default=15)
 
+    # Logomarca da vidraçaria, impressa no topo do orçamento.
+    logo = models.ImageField(upload_to="logos/", blank=True)
+
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     criado_em = models.DateTimeField(auto_now_add=True)

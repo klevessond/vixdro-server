@@ -10,8 +10,6 @@ from decimal import ROUND_CEILING, Decimal
 
 from produtos.calculo import CENTAVO, DISCRETAS, MIL, MILESIMO, calcular_componente, modo
 
-# Itens que sofrem perda no corte. Vidro é cortado sob medida; acessórios são peças.
-MODOS_COM_PERDA = {"peca_comprimento", "metro"}
 PRECIFICACAO_PADRAO = {
     "margem_percentual": Decimal(0),
     "mao_de_obra_m2": Decimal(0),
@@ -39,26 +37,34 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None):
     for ln in linhas:
         qtd = ln.get("quantidade", 1)
         itens = []
-        custo_unitario = Decimal(0)
-        material_com_perda = Decimal(0)
+        custo_linha = Decimal(0)
         for it in ln["itens"]:
+            # Cada item da peça é cobrado pela barra inteira (padrão) ou pelos
+            # metros usados, conforme escolhido. A perda de corte não entra no
+            # preço: ela serve só para decidir quantas barras comprar.
             c = calcular_componente(
                 it["item"], it.get("coef_largura", 0), it.get("coef_altura", 0),
                 it.get("coef_area", 0), it.get("ajuste", 0), ln["largura_mm"], ln["altura_mm"],
+                quantidade=qtd, cobranca=it.get("cobranca", "inteira"),
             )
             c["observacao"] = it.get("observacao", "")
-            custo_unitario += Decimal(c["custo"])
-            material_com_perda += Decimal(c["custo"]) * (fator_perda if c["modo"] in MODOS_COM_PERDA else 1)
+            custo_linha += Decimal(c["custo_total"])
             itens.append(c)
             a = acumulado.setdefault(it["item"].pk, {"item": it["item"], "consumo": Decimal(0)})
             a["consumo"] += Decimal(c["consumo"]) * qtd
 
-        custo_linha = custo_unitario * qtd
+        custo_unitario = custo_linha / qtd
+        material_com_perda = custo_unitario
         custo_materiais += custo_linha
 
         # Preço para o cliente: material (com perda) + margem + mão de obra.
         area_m2 = Decimal(ln["largura_mm"]) * Decimal(ln["altura_mm"]) / Decimal(1_000_000)
-        mao_de_obra = max(area_m2 * Decimal(pr["mao_de_obra_m2"]), Decimal(pr["mao_de_obra_minima"]))
+        # Peça sem área (sem largura ou sem altura, ex: acessórios avulsos):
+        # não cobra mão de obra, nem o mínimo por peça.
+        if area_m2 > 0:
+            mao_de_obra = max(area_m2 * Decimal(pr["mao_de_obra_m2"]), Decimal(pr["mao_de_obra_minima"]))
+        else:
+            mao_de_obra = Decimal(0)
         preco_unitario = (material_com_perda * fator_margem + mao_de_obra).quantize(CENTAVO)
         preco_total = preco_unitario * qtd
         subtotal += preco_total

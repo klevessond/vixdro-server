@@ -29,7 +29,21 @@ def modo(item):
     return "unidade"
 
 
-def calcular_componente(item, coef_largura, coef_altura, coef_area, ajuste, largura_mm, altura_mm):
+# Como um item vendido em barra é cobrado:
+#   "inteira": pelas barras inteiras que a peça precisa (padrão)
+#   "metro":   só pelos metros usados (o resto da barra fica como sobra)
+COBRANCA_INTEIRA = "inteira"
+COBRANCA_METRO = "metro"
+
+
+def calcular_componente(item, coef_largura, coef_altura, coef_area, ajuste, largura_mm, altura_mm,
+                        quantidade=1, cobranca=COBRANCA_INTEIRA):
+    """Consumo e custo de um item numa peça.
+
+    quantidade: quantas unidades da peça (ex: 4 janelas iguais). O arredondamento
+    para barras inteiras é feito sobre o TOTAL das unidades, e não unidade por
+    unidade: 4 janelas que usam 2 m cada (8 m) pagam 2 barras, e não 4.
+    """
     L = Decimal(largura_mm) / MIL
     A = Decimal(altura_mm) / MIL
     consumo = coef_largura * L + coef_altura * A + coef_area * L * A + ajuste
@@ -40,14 +54,23 @@ def calcular_componente(item, coef_largura, coef_altura, coef_area, ajuste, larg
     if m == "unidade" and item.unidade in DISCRETAS:
         consumo = consumo.to_integral_value(rounding=ROUND_CEILING)
 
+    quantidade = Decimal(quantidade or 1)
+    consumo_total = consumo * quantidade
     pecas = None
+    barras_cobradas = None
     if m == "peca_comprimento":
-        # Custo proporcional: 2,40 m de uma barra de 6 m = 0,4 barra.
-        # A compra em barras inteiras é calculada no projeto, somando tudo.
-        pecas = consumo / (Decimal(item.comprimento_mm) / MIL)
-        custo = pecas * item.preco
+        comprimento_m = Decimal(item.comprimento_mm) / MIL
+        pecas = consumo / comprimento_m
+        if cobranca == COBRANCA_METRO:
+            # 8 m de uma barra de 6 m = 1,333 barra.
+            custo_total = consumo_total / comprimento_m * item.preco
+        else:
+            # 8 m pedem 2 barras inteiras.
+            barras_cobradas = (consumo_total / comprimento_m).to_integral_value(rounding=ROUND_CEILING)
+            custo_total = barras_cobradas * item.preco
     else:
-        custo = consumo * item.preco
+        custo_total = consumo_total * item.preco
+    custo = custo_total / quantidade  # por unidade da peça
 
     return {
         "item": item.pk,
@@ -60,7 +83,10 @@ def calcular_componente(item, coef_largura, coef_altura, coef_area, ajuste, larg
         "pecas": str(pecas.quantize(MILESIMO)) if pecas is not None else None,
         "comprimento_mm": item.comprimento_mm,
         "preco_unitario": str(item.preco),
+        "cobranca": cobranca if m == "peca_comprimento" else None,
+        "barras_cobradas": str(barras_cobradas) if barras_cobradas is not None else None,
         "custo": str(custo.quantize(CENTAVO)),
+        "custo_total": str(custo_total.quantize(CENTAVO)),
     }
 
 
@@ -72,6 +98,7 @@ def calcular_produto(componentes, largura_mm, altura_mm):
         linha = calcular_componente(
             c["item"], c.get("coef_largura", 0), c.get("coef_altura", 0),
             c.get("coef_area", 0), c.get("ajuste", 0), largura_mm, altura_mm,
+            cobranca=c.get("cobranca", COBRANCA_INTEIRA),
         )
         linha["observacao"] = c.get("observacao", "")
         total += Decimal(linha["custo"])

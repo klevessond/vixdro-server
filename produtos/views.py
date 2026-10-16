@@ -35,7 +35,7 @@ class ProdutoViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"])
     def simular(self, request):
-        s = SimulacaoSerializer(data=request.data)
+        s = SimulacaoSerializer(data=request.data, context={"request": request})
         s.is_valid(raise_exception=True)
         d = s.validated_data
         return Response(calcular_produto(d["componentes"], d["largura_mm"], d["altura_mm"]))

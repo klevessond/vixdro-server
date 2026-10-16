@@ -1,7 +1,7 @@
 from django.db import transaction
 from rest_framework import serializers
 
-from fornecedores.models import ItemFornecedor
+from fornecedores.models import ItemFornecedor, item_visivel
 from fornecedores.serializers import ItemCatalogoSerializer
 
 from .calculo import modo
@@ -16,13 +16,15 @@ class ComponenteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Componente
         fields = ("id", "item", "item_detalhe", "modo", "coef_largura", "coef_altura",
-                  "coef_area", "ajuste", "observacao")
+                  "coef_area", "ajuste", "observacao", "cobranca")
         read_only_fields = ("id",)
 
     def get_modo(self, obj):
         return modo(obj.item)
 
     def validate(self, attrs):
+        if not item_visivel(attrs["item"], self.context["request"].user):
+            raise serializers.ValidationError({"item": "Item não encontrado."})
         if not attrs["item"].fornecedor.ativo:
             raise serializers.ValidationError({"item": "Este fornecedor não está mais ativo."})
         regra = [attrs.get(c, 0) for c in ("coef_largura", "coef_altura", "coef_area", "ajuste")]
@@ -94,9 +96,15 @@ class ComponenteSimulacaoSerializer(serializers.Serializer):
     coef_area = serializers.DecimalField(max_digits=8, decimal_places=4, default=0)
     ajuste = serializers.DecimalField(max_digits=10, decimal_places=4, default=0)
     observacao = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    cobranca = serializers.ChoiceField(choices=["inteira", "metro"], default="inteira")
+
+    def validate_item(self, item):
+        if not item_visivel(item, self.context["request"].user):
+            raise serializers.ValidationError("Item não encontrado.")
+        return item
 
 
 class SimulacaoSerializer(serializers.Serializer):
-    largura_mm = serializers.IntegerField(min_value=1, max_value=20000)
-    altura_mm = serializers.IntegerField(min_value=1, max_value=20000)
+    largura_mm = serializers.IntegerField(min_value=0, max_value=20000, default=0)
+    altura_mm = serializers.IntegerField(min_value=0, max_value=20000, default=0)
     componentes = ComponenteSimulacaoSerializer(many=True)

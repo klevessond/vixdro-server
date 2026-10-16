@@ -1,6 +1,13 @@
+import base64
+import binascii
 import uuid
+from io import BytesIO
 
+from django.core.files.base import ContentFile
+from PIL import Image, UnidentifiedImageError
 from rest_framework import generics, status
+from rest_framework.exceptions import ValidationError
+from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -85,3 +92,56 @@ class PrecosPadraoView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+LOGO_LADO_MAXIMO = 800  # px: suficiente para a impressão, leve para guardar
+
+
+class LogoView(APIView):
+    """
+    GET    /api/v1/vidraceiros/me/logo/   {"logo_url", "logo_data_uri"}
+    POST   /api/v1/vidraceiros/me/logo/   {"imagem_base64": "..."}  (PNG ou JPEG)
+    DELETE /api/v1/vidraceiros/me/logo/
+    """
+
+    def get(self, request):
+        return Response(self._dados(request))
+
+    def post(self, request):
+        texto = str(request.data.get("imagem_base64", ""))
+        if "," in texto[:100]:
+            texto = texto.split(",", 1)[1]  # aceita também "data:image/png;base64,...."
+        try:
+            bruto = base64.b64decode(texto, validate=True)
+            with Image.open(BytesIO(bruto)) as original:
+                img = original.copy()
+        except (binascii.Error, ValueError, UnidentifiedImageError):
+            raise ValidationError({"imagem_base64": "Envie uma imagem PNG ou JPEG."})
+
+        img.thumbnail((LOGO_LADO_MAXIMO, LOGO_LADO_MAXIMO))
+        if img.mode not in ("RGB", "RGBA"):
+            img = img.convert("RGBA")
+        saida = BytesIO()
+        img.save(saida, format="PNG", optimize=True)
+
+        usuario = request.user
+        usuario.logo.save(f"logo-{usuario.pk}.png", ContentFile(saida.getvalue()), save=True)
+        return Response(self._dados(request), status=status.HTTP_201_CREATED)
+
+    def delete(self, request):
+        request.user.logo = ""
+        request.user.save(update_fields=["logo"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @staticmethod
+    def _dados(request):
+        logo = request.user.logo
+        if not logo:
+            return {"logo_url": None, "logo_data_uri": None}
+        with logo.open("rb") as f:
+            conteudo = base64.b64encode(f.read()).decode()
+        return {
+            "logo_url": request.build_absolute_uri(logo.url),
+            # Pronto para o PDF: a imagem vai dentro do documento.
+            "logo_data_uri": f"data:image/png;base64,{conteudo}",
+        }

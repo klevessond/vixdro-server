@@ -1,7 +1,5 @@
 import re
 
-from django.contrib.auth import password_validation
-from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -12,6 +10,7 @@ CAMPOS_PUBLICOS = (
     "cep", "rua", "numero", "complemento", "bairro", "cidade", "estado",
 )
 UFS = {uf for uf, _ in UF_CHOICES}
+SENHA_MINIMA = 6
 
 
 class VidraceiroSerializer(serializers.ModelSerializer):
@@ -65,11 +64,11 @@ class CadastroSerializer(serializers.ModelSerializer):
         return valor
 
     def validate(self, attrs):
-        dados_sem_senha = {k: v for k, v in attrs.items() if k != "password"}
-        try:
-            password_validation.validate_password(attrs["password"], Vidraceiro(**dados_sem_senha))
-        except DjangoValidationError as e:
-            raise serializers.ValidationError({"password": list(e.messages)})
+        # Sem exigência de senha complexa, só um tamanho mínimo.
+        if len(attrs["password"]) < SENHA_MINIMA:
+            raise serializers.ValidationError(
+                {"password": f"A senha precisa ter pelo menos {SENHA_MINIMA} caracteres."}
+            )
         return attrs
 
     def create(self, validated_data):

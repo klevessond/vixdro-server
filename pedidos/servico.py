@@ -35,7 +35,12 @@ def criar_pedidos(projeto, vidraceiro):
     itens = ItemFornecedor.objects.select_related("fornecedor").in_bulk([x["item"] for x in lista])
     por_fornecedor = defaultdict(list)
     for x in lista:
-        por_fornecedor[itens[x["item"]].fornecedor].append(x)
+        fornecedor = itens[x["item"]].fornecedor
+        # Itens próprios do vidraceiro (ex: vidros) são comprados fora: não entram no pedido.
+        if fornecedor.vidraceiro_id is None:
+            por_fornecedor[fornecedor].append(x)
+    if not por_fornecedor:
+        raise ValidationError("Este projeto só tem itens próprios, que não são pedidos ao fornecedor.")
 
     pedidos = []
     with transaction.atomic():

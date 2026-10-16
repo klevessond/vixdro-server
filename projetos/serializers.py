@@ -6,7 +6,7 @@ from django.db.models import Max
 from rest_framework import serializers
 
 from clientes.models import Cliente
-from fornecedores.models import ItemFornecedor
+from fornecedores.models import ItemFornecedor, item_visivel
 from fornecedores.serializers import ItemCatalogoSerializer
 from produtos.calculo import modo
 from produtos.models import Produto
@@ -45,20 +45,24 @@ class ItemLinhaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ItemLinha
-        fields = ("item", "item_detalhe", "modo", *CAMPOS_REGRA, "observacao")
+        fields = ("item", "item_detalhe", "modo", *CAMPOS_REGRA, "observacao", "cobranca")
 
     def get_modo(self, obj):
         return modo(obj.item)
 
     def validate(self, attrs):
+        if not item_visivel(attrs["item"], self.context["request"].user):
+            raise serializers.ValidationError({"item": "Item não encontrado."})
         return _validar_regra(attrs)
 
 
 class LinhaSerializer(serializers.ModelSerializer):
     itens = ItemLinhaSerializer(many=True)
     produto = serializers.PrimaryKeyRelatedField(queryset=Produto.objects.all(), required=False, allow_null=True)
-    largura_mm = serializers.IntegerField(min_value=1, max_value=20000)
-    altura_mm = serializers.IntegerField(min_value=1, max_value=20000)
+    # Medidas opcionais (0 = não informada): uma peça avulsa pode não ter
+    # largura nem altura. O app exige a medida quando algum item depende dela.
+    largura_mm = serializers.IntegerField(min_value=0, max_value=20000, default=0)
+    altura_mm = serializers.IntegerField(min_value=0, max_value=20000, default=0)
     quantidade = serializers.IntegerField(min_value=1, max_value=999)
 
     class Meta:
@@ -178,12 +182,18 @@ class ItemCalculoSerializer(serializers.Serializer):
     coef_area = serializers.DecimalField(max_digits=8, decimal_places=4, default=0)
     ajuste = serializers.DecimalField(max_digits=10, decimal_places=4, default=0)
     observacao = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    cobranca = serializers.ChoiceField(choices=["inteira", "metro"], default="inteira")
+
+    def validate_item(self, item):
+        if not item_visivel(item, self.context["request"].user):
+            raise serializers.ValidationError("Item não encontrado.")
+        return item
 
 
 class LinhaCalculoSerializer(serializers.Serializer):
     nome = serializers.CharField(max_length=150)
-    largura_mm = serializers.IntegerField(min_value=1, max_value=20000)
-    altura_mm = serializers.IntegerField(min_value=1, max_value=20000)
+    largura_mm = serializers.IntegerField(min_value=0, max_value=20000, default=0)
+    altura_mm = serializers.IntegerField(min_value=0, max_value=20000, default=0)
     quantidade = serializers.IntegerField(min_value=1, max_value=999, default=1)
     itens = ItemCalculoSerializer(many=True)
 

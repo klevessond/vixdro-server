@@ -89,6 +89,10 @@ class ItemLinha(models.Model):
     coef_area = models.DecimalField(max_digits=8, decimal_places=4, default=0)
     ajuste = models.DecimalField(max_digits=10, decimal_places=4, default=0)
     observacao = models.CharField(max_length=100, blank=True)
+    # Só para itens vendidos em barra: cobrar a barra inteira ou só os metros usados.
+    cobranca = models.CharField(
+        max_length=10, choices=[("inteira", "Barra inteira"), ("metro", "Por metro usado")], default="inteira",
+    )
     ordem = models.PositiveIntegerField(default=0)
 
     class Meta:

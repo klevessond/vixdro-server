@@ -1,13 +1,13 @@
 from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from rest_framework import generics
+from rest_framework import generics, viewsets
 from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
-from .models import Fornecedor, ItemFornecedor
-from .serializers import FornecedorSerializer, ItemCatalogoSerializer
+from .models import Fornecedor, ItemFornecedor, fornecedor_proprio, fornecedores_visiveis
+from .serializers import FornecedorSerializer, ItemCatalogoSerializer, ItemProprioSerializer
 
 
 class FornecedoresView(generics.ListAPIView):
@@ -15,7 +15,10 @@ class FornecedoresView(generics.ListAPIView):
 
     serializer_class = FornecedorSerializer
     pagination_class = None
-    queryset = Fornecedor.objects.filter(ativo=True)
+
+    def get_queryset(self):
+        # Os itens próprios do vidraceiro aparecem como um fornecedor a mais.
+        return fornecedores_visiveis(self.request.user).order_by("vidraceiro", "nome")
 
 
 class PaginacaoCatalogo(PageNumberPagination):
@@ -54,7 +57,9 @@ class CatalogoView(generics.ListAPIView):
         fornecedor = p.get("fornecedor")
         if not fornecedor or not fornecedor.isdigit():
             raise ValidationError({"fornecedor": "Informe o id do fornecedor."})
-        qs = ItemFornecedor.objects.filter(fornecedor_id=fornecedor, fornecedor__ativo=True)
+        qs = ItemFornecedor.objects.filter(
+            fornecedor_id=fornecedor, fornecedor__in=fornecedores_visiveis(self.request.user)
+        )
 
         desde_txt = p.get("atualizado_desde")
         if desde_txt:
@@ -70,3 +75,42 @@ class CatalogoView(generics.ListAPIView):
             qs = qs.filter(Q(codigo__icontains=busca) | Q(descricao__icontains=busca))
 
         return qs.order_by("codigo")
+
+
+class MeusItensViewSet(viewsets.ModelViewSet):
+    """Itens próprios do vidraceiro (o que não está no catálogo do fornecedor).
+
+    GET/POST         /api/v1/meus-itens/
+    GET/PUT/PATCH    /api/v1/meus-itens/<id>/
+    DELETE           /api/v1/meus-itens/<id>/   desativa (produtos antigos continuam funcionando)
+    """
+
+    serializer_class = ItemProprioSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        return ItemFornecedor.objects.filter(
+            fornecedor__vidraceiro=self.request.user, ativo=True
+        ).order_by("descricao")
+
+    def perform_create(self, serializer):
+        fornecedor = fornecedor_proprio(self.request.user)
+        agora = timezone.now()
+        codigo = (serializer.validated_data.get("codigo") or "").strip()
+        if not codigo:
+            n = ItemFornecedor.objects.filter(fornecedor=fornecedor).count() + 1
+            codigo = f"MEU-{n:04d}"
+            while ItemFornecedor.objects.filter(fornecedor=fornecedor, codigo=codigo).exists():
+                n += 1
+                codigo = f"MEU-{n:04d}"
+        elif ItemFornecedor.objects.filter(fornecedor=fornecedor, codigo=codigo).exists():
+            raise ValidationError({"codigo": "Você já tem um item com este código."})
+        serializer.save(fornecedor=fornecedor, codigo=codigo, atualizado_em=agora, visto_em=agora)
+
+    def perform_update(self, serializer):
+        serializer.save(atualizado_em=timezone.now())
+
+    def perform_destroy(self, instance):
+        instance.ativo = False
+        instance.atualizado_em = timezone.now()
+        instance.save(update_fields=["ativo", "atualizado_em"])
