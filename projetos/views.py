@@ -50,6 +50,9 @@ class ProjetoViewSet(viewsets.ModelViewSet):
             busca = self.request.query_params.get("busca", "").strip()
             if busca:
                 qs = qs.filter(_filtro_busca(busca))
+            cliente = self.request.query_params.get("cliente")
+            if cliente:
+                qs = qs.filter(cliente_id=cliente)
             return qs.annotate(total_pecas=Sum("linhas__quantidade"))
         return qs.prefetch_related("linhas__itens__item")
 

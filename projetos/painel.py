@@ -10,6 +10,8 @@ from clientes.models import Cliente
 from fornecedores.models import ItemFornecedor
 from produtos.models import Componente, Produto
 
+from agenda.views import resumo_agenda
+
 from .models import Projeto
 from .views import orcamentos_parados
 
@@ -60,6 +62,7 @@ class PainelView(APIView):
                 "itens_preco_novo": precos_novos,
                 "dias": DIAS_PRECO_NOVO,
             },
+            "agenda": resumo_agenda(v),
             "produtos": Produto.objects.filter(vidraceiro=v, ativo=True).count(),
             "meus_itens": ItemFornecedor.objects.filter(fornecedor__vidraceiro=v, ativo=True).count(),
             "empresa": {
