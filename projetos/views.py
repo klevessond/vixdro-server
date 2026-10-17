@@ -1,8 +1,10 @@
 import uuid
 
 import re
+from datetime import timedelta
 
 from django.db.models import Count, Q, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -90,8 +92,54 @@ class ProjetoViewSet(viewsets.ModelViewSet):
             raise ValidationError({"status": "Já existe pedido enviado ao fornecedor para este projeto."})
         projeto.status = novo
         projeto.status_atualizado_em = timezone.now()
-        projeto.save(update_fields=["status", "status_atualizado_em", "atualizado_em"])
+        # Mudou a situação: o lembrete recomeça do zero.
+        projeto.lembrete_adiado_ate = None
+        projeto.save(update_fields=["status", "status_atualizado_em", "lembrete_adiado_ate", "atualizado_em"])
         return Response({"status": projeto.status, "status_atualizado_em": projeto.status_atualizado_em})
+
+    @action(detail=False, methods=["get"])
+    def parados(self, request):
+        """GET /api/v1/projetos/parados/  orçamentos enviados ao cliente e sem resposta."""
+        agora = timezone.now()
+        resultado = []
+        for p in orcamentos_parados(request.user).select_related("cliente").prefetch_related("linhas__itens__item"):
+            desde = p.status_atualizado_em or p.atualizado_em
+            resultado.append({
+                "id": str(p.id),
+                "numero": p.numero,
+                "nome": p.nome,
+                "cliente": str(p.cliente_id),
+                "cliente_nome": p.cliente.nome,
+                "cliente_celular": p.cliente.celular,
+                "enviado_em": desde.isoformat(),
+                "dias_parado": (agora - desde).days,
+                "ultimo_contato_em": p.ultimo_contato_em.isoformat() if p.ultimo_contato_em else None,
+                "total": calcular_projeto_salvo(p)["orcamento"]["total"],
+            })
+        resultado.sort(key=lambda x: -x["dias_parado"])
+        return Response({"dias_lembrete": request.user.dias_lembrete, "orcamentos": resultado})
+
+    @action(detail=True, methods=["post"], url_path="adiar-lembrete")
+    def adiar_lembrete(self, request, pk=None):
+        """POST /api/v1/projetos/<id>/adiar-lembrete/  {"dias": 3, "contatou": true}
+
+        Esconde o lembrete por alguns dias. contatou=true registra que o
+        cliente foi cobrado (ex: pelo WhatsApp)."""
+        projeto = self.get_object()
+        try:
+            dias = int(request.data.get("dias", 3))
+        except (TypeError, ValueError):
+            raise ValidationError({"dias": "Informe um número de dias."})
+        if not 1 <= dias <= 60:
+            raise ValidationError({"dias": "Use de 1 a 60 dias."})
+        agora = timezone.now()
+        projeto.lembrete_adiado_ate = agora + timedelta(days=dias)
+        campos = ["lembrete_adiado_ate"]
+        if request.data.get("contatou"):
+            projeto.ultimo_contato_em = agora
+            campos.append("ultimo_contato_em")
+        projeto.save(update_fields=campos)
+        return Response({"lembrete_adiado_ate": projeto.lembrete_adiado_ate})
 
     @action(detail=False, methods=["post"])
     def calcular(self, request):
@@ -145,6 +193,18 @@ def calcular_projeto_salvo(projeto):
     ]
     precificacao = {c: getattr(projeto, c) for c in CAMPOS_PRECO}
     return calcular_projeto(linhas, projeto.perda_percentual, precificacao)
+
+
+def orcamentos_parados(vidraceiro):
+    """Enviados ao cliente há mais de N dias, sem resposta e sem lembrete adiado."""
+    agora = timezone.now()
+    limite = agora - timedelta(days=vidraceiro.dias_lembrete)
+    return (
+        Projeto.objects.filter(vidraceiro=vidraceiro, ativo=True, status=Projeto.Status.ENVIADO)
+        .annotate(desde=Coalesce("status_atualizado_em", "atualizado_em"))
+        .filter(desde__lte=limite)
+        .filter(Q(lembrete_adiado_ate__isnull=True) | Q(lembrete_adiado_ate__lte=agora))
+    )
 
 
 def _tem_pedido_enviado(projeto):

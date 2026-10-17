@@ -89,6 +89,32 @@ class LoginSerializer(TokenObtainPairSerializer):
         return data
 
 
+class PerfilSerializer(serializers.ModelSerializer):
+    """Dados do vidraceiro editáveis na tela "Minha empresa".
+    O e-mail não muda aqui: ele é o login da conta."""
+
+    cpf_cnpj = serializers.CharField(max_length=20)
+    cep = serializers.CharField(max_length=10, required=False, allow_blank=True)
+    estado = serializers.CharField(max_length=2)
+
+    class Meta:
+        model = Vidraceiro
+        fields = ("nome", "empresa", "celular", "cpf_cnpj", "cep", "rua", "numero",
+                  "complemento", "bairro", "cidade", "estado")
+
+    def validate_nome(self, valor):
+        valor = valor.strip()
+        if not valor:
+            raise serializers.ValidationError("Informe o nome.")
+        return valor
+
+    # Mesmas regras do cadastro da conta.
+    validate_cpf_cnpj = CadastroSerializer.validate_cpf_cnpj
+    validate_cep = CadastroSerializer.validate_cep
+    validate_celular = CadastroSerializer.validate_celular
+    validate_estado = CadastroSerializer.validate_estado
+
+
 class PrecosPadraoSerializer(serializers.ModelSerializer):
     """Padrões de preço do vidraceiro (tela "Preços e margem" do app)."""
 
@@ -97,8 +123,9 @@ class PrecosPadraoSerializer(serializers.ModelSerializer):
     mao_de_obra_minima_padrao = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0)
     perda_padrao = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=0, max_value=50)
     validade_padrao = serializers.IntegerField(min_value=1, max_value=365)
+    dias_lembrete = serializers.IntegerField(min_value=1, max_value=60, required=False)
 
     class Meta:
         model = Vidraceiro
         fields = ("margem_padrao", "mao_de_obra_m2_padrao", "mao_de_obra_minima_padrao",
-                  "perda_padrao", "validade_padrao")
+                  "perda_padrao", "validade_padrao", "dias_lembrete")

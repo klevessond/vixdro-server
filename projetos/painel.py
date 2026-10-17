@@ -11,6 +11,7 @@ from fornecedores.models import ItemFornecedor
 from produtos.models import Componente, Produto
 
 from .models import Projeto
+from .views import orcamentos_parados
 
 DIAS_PRECO_NOVO = 7
 
@@ -50,6 +51,9 @@ class PainelView(APIView):
             "projetos": {
                 "ativos": projetos.exclude(status=Projeto.Status.RECUSADO).count(),
                 "aguardando_cliente": projetos.filter(status=Projeto.Status.ENVIADO).count(),
+                # Lembrete: enviados ao cliente e sem resposta há mais de N dias.
+                "parados": orcamentos_parados(v).count(),
+                "dias_lembrete": v.dias_lembrete,
             },
             "precos": {
                 "margem_padrao": str(v.margem_padrao),

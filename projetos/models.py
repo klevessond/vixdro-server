@@ -50,6 +50,14 @@ class Projeto(models.Model):
     status = models.CharField(max_length=15, choices=Status.choices, default=Status.RASCUNHO)
     status_atualizado_em = models.DateTimeField(null=True, blank=True)
 
+    # Lembrete de orçamento parado (enviado ao cliente e sem resposta).
+    lembrete_adiado_ate = models.DateTimeField(
+        null=True, blank=True, help_text="Até quando o lembrete fica escondido (\"lembrar depois\")",
+    )
+    ultimo_contato_em = models.DateTimeField(
+        null=True, blank=True, help_text="Última vez que o vidraceiro cobrou o cliente pelo app",
+    )
+
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(auto_now_add=True)
     atualizado_em = models.DateTimeField(auto_now=True, db_index=True)

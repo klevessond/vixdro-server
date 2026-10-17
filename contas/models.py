@@ -57,6 +57,8 @@ class Vidraceiro(AbstractBaseUser, PermissionsMixin):
     mao_de_obra_minima_padrao = models.DecimalField("mão de obra mínima por peça", max_digits=10, decimal_places=2, default=0)
     perda_padrao = models.DecimalField("perda no corte (%)", max_digits=5, decimal_places=2, default=10)
     validade_padrao = models.PositiveIntegerField("validade do orçamento (dias)", default=15)
+    # Depois de quantos dias sem resposta um orçamento enviado vira lembrete.
+    dias_lembrete = models.PositiveIntegerField("lembrar de orçamento parado após (dias)", default=5)
 
     # Logomarca da vidraçaria, impressa no topo do orçamento.
     logo = models.ImageField(upload_to="logos/", blank=True)
