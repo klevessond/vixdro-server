@@ -105,3 +105,31 @@ class ItemLinha(models.Model):
 
     class Meta:
         ordering = ["ordem", "id"]
+
+
+def _caminho_foto(registro, nome):
+    # Nome aleatório: a foto não é encontrada por quem não tem o endereço exato.
+    return f"medicao/{registro.projeto_id}/{uuid.uuid4().hex}.jpg"
+
+
+def _caminho_miniatura(registro, nome):
+    return f"medicao/{registro.projeto_id}/mini/{uuid.uuid4().hex}.jpg"
+
+
+class RegistroMedicao(models.Model):
+    """Diário da medição: uma foto, uma anotação, ou os dois.
+
+    A peça a que se refere é guardada pelo NOME (ex: "Janela da sala"), e não
+    por vínculo: as peças são regravadas a cada salvamento do projeto, e um
+    vínculo direto faria as fotos se perderem."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    projeto = models.ForeignKey(Projeto, on_delete=models.CASCADE, related_name="registros")
+    referencia = models.CharField(max_length=150, blank=True, help_text="Peça a que se refere (opcional)")
+    texto = models.TextField(blank=True)
+    foto = models.ImageField(upload_to=_caminho_foto, blank=True)
+    miniatura = models.ImageField(upload_to=_caminho_miniatura, blank=True)
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-criado_em"]

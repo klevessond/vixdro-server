@@ -12,13 +12,15 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from .calculo import calcular_projeto
-from .models import Projeto
+from .fotos import FotoInvalida, processar_base64
+from .models import Projeto, RegistroMedicao
 from .serializers import (
     CAMPOS_PRECO,
     CalculoSerializer,
     ProjetoResumoSerializer,
     ProjetoSerializer,
     padroes_do_vidraceiro,
+    RegistroMedicaoSerializer,
 )
 
 
@@ -215,3 +217,46 @@ def _tem_pedido_enviado(projeto):
     from pedidos.models import Pedido  # import local: o app pedidos depende deste
 
     return projeto.pedidos.exclude(status__in=[Pedido.Status.ERRO, Pedido.Status.CANCELADO]).exists()
+
+
+class RegistroMedicaoViewSet(viewsets.ModelViewSet):
+    """Diário da medição (fotos e anotações) de um projeto.
+
+    GET    /api/v1/medicao/?projeto=<id>
+    POST   /api/v1/medicao/        {"projeto", "texto"?, "referencia"?, "imagem_base64"?}
+    PATCH  /api/v1/medicao/<id>/   {"texto", "referencia"}
+    DELETE /api/v1/medicao/<id>/
+    """
+
+    serializer_class = RegistroMedicaoSerializer
+    pagination_class = None
+    lookup_value_regex = "[0-9a-f-]{36}"
+
+    def get_queryset(self):
+        qs = RegistroMedicao.objects.filter(projeto__vidraceiro=self.request.user, projeto__ativo=True)
+        if self.action == "list":
+            projeto = self.request.query_params.get("projeto")
+            if not projeto:
+                raise ValidationError({"projeto": "Informe o projeto."})
+            qs = qs.filter(projeto_id=projeto)
+        return qs
+
+    def perform_create(self, serializer):
+        imagem = serializer.validated_data.pop("imagem_base64", "")
+        registro = serializer.save()
+        if imagem:
+            try:
+                foto, mini = processar_base64(imagem)
+            except FotoInvalida as e:
+                registro.delete()
+                raise ValidationError({"imagem_base64": str(e)})
+            registro.foto.save("foto.jpg", foto, save=False)
+            registro.miniatura.save("mini.jpg", mini, save=False)
+            registro.save(update_fields=["foto", "miniatura"])
+
+    def perform_destroy(self, instance):
+        # As fotos não são compartilhadas com nada: podem sair do disco.
+        for arquivo in (instance.foto, instance.miniatura):
+            if arquivo:
+                arquivo.delete(save=False)
+        instance.delete()

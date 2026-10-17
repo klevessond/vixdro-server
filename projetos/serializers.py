@@ -11,7 +11,7 @@ from fornecedores.serializers import ItemCatalogoSerializer
 from produtos.calculo import modo
 from produtos.models import Produto
 
-from .models import ItemLinha, LinhaProjeto, Projeto
+from .models import ItemLinha, LinhaProjeto, Projeto, RegistroMedicao
 
 CAMPOS_REGRA = ("coef_largura", "coef_altura", "coef_area", "ajuste")
 CAMPOS_PRECO = ("margem_percentual", "mao_de_obra_m2", "mao_de_obra_minima",
@@ -207,3 +207,41 @@ class CalculoSerializer(serializers.Serializer):
     valor_adicional = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0, default=0)
     desconto = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0, default=0)
     linhas = LinhaCalculoSerializer(many=True)
+
+
+class RegistroMedicaoSerializer(serializers.ModelSerializer):
+    projeto = serializers.PrimaryKeyRelatedField(queryset=Projeto.objects.none())
+    imagem_base64 = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    foto_url = serializers.SerializerMethodField()
+    miniatura_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RegistroMedicao
+        fields = ("id", "projeto", "referencia", "texto", "imagem_base64", "foto_url", "miniatura_url", "criado_em")
+        read_only_fields = ("id", "criado_em")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is not None:
+            self.fields["projeto"].queryset = Projeto.objects.filter(vidraceiro=request.user, ativo=True)
+
+    def _url(self, arquivo):
+        if not arquivo:
+            return None
+        request = self.context.get("request")
+        return request.build_absolute_uri(arquivo.url) if request else arquivo.url
+
+    def get_foto_url(self, obj):
+        return self._url(obj.foto)
+
+    def get_miniatura_url(self, obj):
+        return self._url(obj.miniatura)
+
+    def validate(self, attrs):
+        if self.instance is not None:
+            attrs.pop("projeto", None)  # o registro não muda de projeto
+            attrs.pop("imagem_base64", None)  # a foto não é trocada: apague e envie outra
+        elif not (attrs.get("texto", "").strip() or attrs.get("imagem_base64")):
+            raise serializers.ValidationError("Envie uma foto ou escreva uma anotação.")
+        return attrs
