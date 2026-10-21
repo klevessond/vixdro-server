@@ -1,6 +1,9 @@
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
+
+from contas.planos import RequerPro
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -21,6 +24,9 @@ class CompromissoViewSet(viewsets.ModelViewSet):
 
     serializer_class = CompromissoSerializer
     pagination_class = None
+    # A agenda é um recurso do plano Pro. Os compromissos de quem voltar ao
+    # gratuito ficam guardados e reaparecem quando o Pro for liberado.
+    permission_classes = [IsAuthenticated, RequerPro]
     lookup_value_regex = "[0-9a-f-]{36}"
 
     def get_queryset(self):
@@ -51,12 +57,16 @@ class CompromissoViewSet(viewsets.ModelViewSet):
 
 
 def resumo_agenda(vidraceiro):
-    """Para a tela inicial: compromissos de hoje e o próximo pendente."""
+    """Para a tela inicial: compromissos de hoje e o próximo pendente.
+    Sem o Pro, não revela nada da agenda (só avisa que ela é do Pro)."""
+    if not vidraceiro.tem_pro:
+        return {"disponivel": False, "hoje": 0, "proximo": None}
     agora = timezone.now()
     hoje = timezone.localdate()
     pendentes = Compromisso.objects.filter(vidraceiro=vidraceiro, concluido=False).select_related("cliente")
     proximo = pendentes.filter(inicio__gte=agora - timezone.timedelta(hours=1)).order_by("inicio").first()
     return {
+        "disponivel": True,
         "hoje": pendentes.filter(inicio__date=hoje).count(),
         "proximo": None if proximo is None else {
             "id": str(proximo.id),

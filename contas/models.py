@@ -60,6 +60,17 @@ class Vidraceiro(AbstractBaseUser, PermissionsMixin):
     # Depois de quantos dias sem resposta um orçamento enviado vira lembrete.
     dias_lembrete = models.PositiveIntegerField("lembrar de orçamento parado após (dias)", default=5)
 
+    # Plano da conta. Por enquanto o Pro é liberado à mão, pelo admin.
+    plano = models.CharField(
+        max_length=10, choices=[("gratuito", "Gratuito"), ("pro", "Pro")], default="gratuito",
+    )
+    plano_validade = models.DateField(
+        null=True, blank=True, help_text="Último dia do Pro. Vazio = sem prazo.",
+    )
+    plano_observacao = models.CharField(
+        max_length=200, blank=True, help_text="Anotação interna (ex: cliente beta, combinado em reunião)",
+    )
+
     # Logomarca da vidraçaria, impressa no topo do orçamento.
     logo = models.ImageField(upload_to="logos/", blank=True)
 
@@ -80,3 +91,12 @@ class Vidraceiro(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return f"{self.nome} <{self.email}>"
+
+    @property
+    def tem_pro(self) -> bool:
+        """Pro ativo: plano Pro e dentro da validade (se houver)."""
+        from django.utils import timezone
+
+        if self.plano != "pro":
+            return False
+        return self.plano_validade is None or self.plano_validade >= timezone.localdate()

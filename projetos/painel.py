@@ -11,6 +11,7 @@ from fornecedores.models import ItemFornecedor
 from produtos.models import Componente, Produto
 
 from agenda.views import resumo_agenda
+from contas.planos import resumo_plano
 
 from .models import Projeto
 from .views import orcamentos_parados
@@ -63,6 +64,7 @@ class PainelView(APIView):
                 "dias": DIAS_PRECO_NOVO,
             },
             "agenda": resumo_agenda(v),
+            "plano": {k: val for k, val in resumo_plano(v).items() if k != "recursos"},
             "produtos": Produto.objects.filter(vidraceiro=v, ativo=True).count(),
             "meus_itens": ItemFornecedor.objects.filter(fornecedor__vidraceiro=v, ativo=True).count(),
             "empresa": {

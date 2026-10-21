@@ -15,7 +15,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import Vidraceiro
-from .serializers import CadastroSerializer, LoginSerializer, PrecosPadraoSerializer, VidraceiroSerializer
+from .planos import resumo_plano
+from .serializers import (
+    CadastroSerializer,
+    LoginSerializer,
+    PerfilSerializer,
+    PrecosPadraoSerializer,
+    VidraceiroSerializer,
+)
 
 
 def _resposta_com_tokens(vidraceiro, http_status):
@@ -76,13 +83,22 @@ class CadastroView(generics.CreateAPIView):
         return None
 
 
-class MeView(generics.RetrieveAPIView):
-    """GET /api/v1/vidraceiros/me/  (exige token)"""
+class MeView(generics.RetrieveUpdateAPIView):
+    """GET   /api/v1/vidraceiros/me/  dados do vidraceiro logado
+    PATCH /api/v1/vidraceiros/me/  edita os dados (o e-mail não muda: é o login)"""
 
-    serializer_class = VidraceiroSerializer
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def get_serializer_class(self):
+        return PerfilSerializer if self.request.method == "PATCH" else VidraceiroSerializer
 
     def get_object(self):
         return self.request.user
+
+    def update(self, request, *args, **kwargs):
+        super().update(request, *args, **kwargs)
+        # Devolve o vidraceiro completo, no mesmo formato do login.
+        return Response(VidraceiroSerializer(request.user).data)
 
 
 class PrecosPadraoView(generics.RetrieveUpdateAPIView):
@@ -145,3 +161,10 @@ class LogoView(APIView):
             # Pronto para o PDF: a imagem vai dentro do documento.
             "logo_data_uri": f"data:image/png;base64,{conteudo}",
         }
+
+
+class PlanoView(APIView):
+    """GET /api/v1/vidraceiros/me/plano/  plano da conta e o que cada um inclui."""
+
+    def get(self, request):
+        return Response(resumo_plano(request.user))
