@@ -6,6 +6,11 @@ from django.utils.html import format_html
 
 from .models import Vidraceiro
 
+# Nome do sistema no painel do admin (no lugar de "Administração do Django").
+admin.site.site_header = "Orçaminio · Administração"
+admin.site.site_title = "Orçaminio"
+admin.site.index_title = "Painel"
+
 
 class PlanoFiltro(admin.SimpleListFilter):
     title = "plano ativo"

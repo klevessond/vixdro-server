@@ -113,7 +113,7 @@ def enviar(pedido):
         pedido.erro = str(e)
     except NotImplementedError:
         pedido.status = Pedido.Status.ERRO
-        pedido.erro = "Este fornecedor ainda não recebe pedidos pelo vixdro."
+        pedido.erro = "Este fornecedor ainda não recebe pedidos pelo Orçaminio."
     pedido.save()
     return pedido
 

@@ -73,6 +73,8 @@ class CatalogoView(generics.ListAPIView):
         busca = p.get("busca", "").strip()
         if busca:
             qs = qs.filter(Q(codigo__icontains=busca) | Q(descricao__icontains=busca))
+        if p.get("tipo"):
+            qs = qs.filter(tipo=p["tipo"])
 
         return qs.order_by("codigo")
 

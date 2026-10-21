@@ -18,7 +18,7 @@ from .models import ItemFornecedor, Sincronizacao
 
 log = logging.getLogger(__name__)
 
-CAMPOS_COMPARADOS = ("descricao", "unidade", "comprimento_mm", "preco", "estoque", "ativo")
+CAMPOS_COMPARADOS = ("descricao", "unidade", "comprimento_mm", "preco", "estoque", "ativo", "tipo")
 
 
 class SincronizacaoEmAndamento(Exception):

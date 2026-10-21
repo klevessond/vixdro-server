@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 import requests
 from django.utils.dateparse import parse_datetime
 
+from ..models import VALORES_TIPO, inferir_tipo
 from .base import AdaptadorBase, ErroFornecedor, ItemCatalogo, PaginaCatalogo
 
 log = logging.getLogger(__name__)
@@ -49,15 +50,22 @@ def converter_item(bruto: dict) -> ItemCatalogo:
         raise ValueError(f"preço inválido: {bruto.get('preco')!r}")
 
     comprimento = bruto.get("comprimento_mm")
+    comprimento_mm = int(comprimento) if comprimento not in (None, "", 0) else None
+    unidade = str(bruto.get("unidade") or "").strip().upper()[:10]
+    # O tipo informado pelo fornecedor vale; vazio ou desconhecido, deduz pela forma de venda.
+    tipo = str(bruto.get("tipo") or "").strip().lower()
+    if tipo not in VALORES_TIPO:
+        tipo = inferir_tipo(unidade, comprimento_mm)
     return ItemCatalogo(
         codigo=codigo,
         descricao=str(bruto.get("descricao") or "").strip()[:255],
-        unidade=str(bruto.get("unidade") or "").strip().upper()[:10],
-        comprimento_mm=int(comprimento) if comprimento not in (None, "", 0) else None,
+        unidade=unidade,
+        comprimento_mm=comprimento_mm,
         preco=preco.quantize(Decimal("0.01")),
         estoque=_decimal(bruto.get("estoque")),
         ativo=bool(bruto.get("ativo", True)),
         atualizado_em=parse_datetime(bruto["atualizado_em"]) if bruto.get("atualizado_em") else None,
+        tipo=tipo,
     )
 
 

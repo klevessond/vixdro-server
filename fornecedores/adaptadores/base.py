@@ -25,6 +25,7 @@ class ItemCatalogo:
     estoque: Optional[Decimal]
     ativo: bool
     atualizado_em: Optional[datetime]
+    tipo: str = "acessorio"  # perfil | acessorio | vidro | vedacao | outro
 
 
 @dataclass

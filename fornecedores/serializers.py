@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Fornecedor, ItemFornecedor
+from .models import TIPOS_ITEM, Fornecedor, ItemFornecedor, inferir_tipo
 
 
 class FornecedorSerializer(serializers.ModelSerializer):
@@ -21,7 +21,7 @@ class ItemCatalogoSerializer(serializers.ModelSerializer):
     class Meta:
         model = ItemFornecedor
         fields = ("id", "fornecedor", "codigo", "descricao", "unidade", "comprimento_mm",
-                  "preco", "estoque", "ativo", "atualizado_em", "imagem_url", "miniatura_url")
+                  "preco", "estoque", "ativo", "atualizado_em", "imagem_url", "miniatura_url", "tipo")
 
     def _url(self, arquivo):
         if not arquivo:
@@ -43,13 +43,14 @@ class ItemProprioSerializer(serializers.ModelSerializer):
     unidade = serializers.ChoiceField(choices=["M", "M2", "UN"])
     comprimento_mm = serializers.IntegerField(min_value=1, max_value=20000, required=False, allow_null=True)
     preco = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=0)
+    tipo = serializers.ChoiceField(choices=TIPOS_ITEM, required=False)
     imagem_url = serializers.SerializerMethodField()
     miniatura_url = serializers.SerializerMethodField()
 
     class Meta:
         model = ItemFornecedor
         fields = ("id", "fornecedor", "codigo", "descricao", "unidade", "comprimento_mm",
-                  "preco", "estoque", "ativo", "atualizado_em", "imagem_url", "miniatura_url")
+                  "preco", "estoque", "ativo", "atualizado_em", "imagem_url", "miniatura_url", "tipo")
         read_only_fields = ("fornecedor", "estoque", "ativo", "atualizado_em")
 
     def get_imagem_url(self, obj):
@@ -68,4 +69,6 @@ class ItemProprioSerializer(serializers.ModelSerializer):
         # Comprimento só faz sentido para peças inteiras vendidas por unidade (barras).
         if attrs.get("unidade", getattr(self.instance, "unidade", None)) != "UN":
             attrs["comprimento_mm"] = None
+        if not attrs.get("tipo") and self.instance is None:
+            attrs["tipo"] = inferir_tipo(attrs.get("unidade"), attrs.get("comprimento_mm"))
         return attrs

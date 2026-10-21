@@ -13,9 +13,9 @@ class FornecedorAdmin(admin.ModelAdmin):
 
 @admin.register(ItemFornecedor)
 class ItemFornecedorAdmin(admin.ModelAdmin):
-    list_display = ("foto", "codigo", "descricao", "unidade", "comprimento_mm", "preco", "estoque", "ativo", "fornecedor")
+    list_display = ("foto", "codigo", "descricao", "tipo", "unidade", "comprimento_mm", "preco", "estoque", "ativo", "fornecedor")
     list_display_links = ("foto", "codigo")
-    list_filter = ("fornecedor", "ativo", "unidade", ("imagem", admin.EmptyFieldListFilter))
+    list_filter = ("tipo", "fornecedor", "ativo", "unidade", ("imagem", admin.EmptyFieldListFilter))
     search_fields = ("codigo", "descricao")
     list_per_page = 50
     actions = ["copiar_imagem"]

@@ -51,6 +51,26 @@ class Fornecedor(models.Model):
         return self.nome
 
 
+TIPOS_ITEM = [
+    ("perfil", "Perfil de alumínio"),
+    ("acessorio", "Acessório"),
+    ("vidro", "Vidro"),
+    ("vedacao", "Vedação"),
+    ("outro", "Outro"),
+]
+VALORES_TIPO = {v for v, _ in TIPOS_ITEM}
+
+
+def inferir_tipo(unidade, comprimento_mm):
+    """Classificação pela forma de venda, enquanto o fornecedor não manda o tipo:
+    vendido em barra = perfil; por m² = vidro; o resto = acessório."""
+    if comprimento_mm:
+        return "perfil"
+    if unidade == "M2":
+        return "vidro"
+    return "acessorio"
+
+
 class ItemFornecedor(models.Model):
     """Cópia local de um item do catálogo do fornecedor.
 
@@ -68,6 +88,9 @@ class ItemFornecedor(models.Model):
     )
     preco = models.DecimalField(max_digits=12, decimal_places=2)
     estoque = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
+    # Categoria para separar a busca. Vem do fornecedor (campo "tipo" da API);
+    # se ele não mandar, é deduzida pela forma de venda (inferir_tipo).
+    tipo = models.CharField(max_length=15, choices=TIPOS_ITEM, default="acessorio", db_index=True)
     ativo = models.BooleanField(default=True)
 
     atualizado_no_fornecedor = models.DateTimeField(null=True, blank=True)
