@@ -49,6 +49,7 @@ class ProjetoViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = Projeto.objects.filter(vidraceiro=self.request.user, ativo=True).select_related("cliente")
         if self.action == "list":
+            qs = qs.annotate(pecas_concluidas=Sum("linhas__quantidade", filter=Q(linhas__concluida=True)))
             busca = self.request.query_params.get("busca", "").strip()
             if busca:
                 qs = qs.filter(_filtro_busca(busca))
@@ -124,6 +125,24 @@ class ProjetoViewSet(viewsets.ModelViewSet):
         resultado.sort(key=lambda x: -x["dias_parado"])
         return Response({"dias_lembrete": request.user.dias_lembrete, "orcamentos": resultado})
 
+    @action(detail=True, methods=["post"], url_path="concluir-peca")
+    def concluir_peca(self, request, pk=None):
+        """POST /api/v1/projetos/<id>/concluir-peca/  {"linha": <id>, "concluida": true}
+
+        Funciona mesmo com o projeto congelado (pedido enviado): é nessa fase
+        que a obra anda."""
+        projeto = self.get_object()
+        linha = projeto.linhas.filter(pk=request.data.get("linha")).first()
+        if linha is None:
+            raise ValidationError({"linha": "Peça não encontrada neste projeto."})
+        linha.concluida = bool(request.data.get("concluida", True))
+        linha.concluida_em = timezone.now() if linha.concluida else None
+        linha.save(update_fields=["concluida", "concluida_em"])
+        total = projeto.linhas.aggregate(t=Sum("quantidade"))["t"] or 0
+        feitas = projeto.linhas.filter(concluida=True).aggregate(t=Sum("quantidade"))["t"] or 0
+        return Response({"linha": linha.pk, "concluida": linha.concluida, "concluida_em": linha.concluida_em,
+                         "total_pecas": total, "pecas_concluidas": feitas})
+
     @action(detail=True, methods=["post"], url_path="adiar-lembrete")
     def adiar_lembrete(self, request, pk=None):
         """POST /api/v1/projetos/<id>/adiar-lembrete/  {"dias": 3, "contatou": true}
@@ -152,7 +171,7 @@ class ProjetoViewSet(viewsets.ModelViewSet):
         s.is_valid(raise_exception=True)
         d = s.validated_data
         precificacao = {c: d[c] for c in CAMPOS_PRECO if c in d}
-        return Response(calcular_projeto(d["linhas"], d["perda_percentual"], precificacao))
+        return Response(calcular_projeto(d["linhas"], d["perda_percentual"], precificacao, d.get("estoque_usado")))
 
     @action(detail=False, methods=["get"])
     def padroes(self, request):
@@ -197,7 +216,7 @@ def calcular_projeto_salvo(projeto):
         for ln in projeto.linhas.all()
     ]
     precificacao = {c: getattr(projeto, c) for c in CAMPOS_PRECO}
-    return calcular_projeto(linhas, projeto.perda_percentual, precificacao)
+    return calcular_projeto(linhas, projeto.perda_percentual, precificacao, projeto.estoque_usado)
 
 
 def orcamentos_parados(vidraceiro):

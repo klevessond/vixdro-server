@@ -22,7 +22,7 @@ PRECIFICACAO_PADRAO = {
 ORDEM_MODO = {"peca_comprimento": 0, "metro": 1, "area": 2, "unidade": 3}
 
 
-def calcular_projeto(linhas, perda_percentual, precificacao=None):
+def calcular_projeto(linhas, perda_percentual, precificacao=None, estoque_usado=None):
     """precificacao: margem, mão de obra, adicional e desconto (dict). Opcional."""
     pr = {**PRECIFICACAO_PADRAO, **(precificacao or {})}
     fator_perda = 1 + Decimal(perda_percentual) / 100
@@ -87,6 +87,7 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None):
 
     lista_compra = []
     custo_compra = Decimal(0)
+    estoque_usado = estoque_usado or {}
     for a in acumulado.values():
         item, consumo = a["item"], a["consumo"]
         m = modo(item)
@@ -109,8 +110,12 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None):
                 quantidade = quantidade.to_integral_value(rounding=ROUND_CEILING)
             unidade_compra = item.unidade.lower()
 
+        # O que sai do estoque do vidraceiro não é pedido nem comprado.
+        do_estoque = min(Decimal(str(estoque_usado.get(str(item.pk), 0) or 0)), quantidade)
+        pedir = quantidade - do_estoque
         custo = quantidade * item.preco
-        custo_compra += custo
+        custo_pedir = pedir * item.preco
+        custo_compra += custo_pedir
         lista_compra.append({
             "item": item.pk,
             "codigo": item.codigo,
@@ -120,6 +125,9 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None):
             "consumo_total": str(consumo.quantize(MILESIMO)),
             "comprimento_mm": item.comprimento_mm,
             "quantidade_compra": format(quantidade.normalize(), "f"),  # 10 -> "10", 2.50 -> "2.5"
+            "quantidade_estoque": format(do_estoque.normalize(), "f"),
+            "quantidade_pedir": format(pedir.normalize(), "f"),
+            "custo_pedir": str(custo_pedir.quantize(CENTAVO)),
             "unidade_compra": unidade_compra,
             "sobra_m": str(sobra.quantize(MILESIMO)) if sobra is not None else None,
             "preco_unitario": str(item.preco),

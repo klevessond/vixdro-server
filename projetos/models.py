@@ -50,6 +50,11 @@ class Projeto(models.Model):
     status = models.CharField(max_length=15, choices=Status.choices, default=Status.RASCUNHO)
     status_atualizado_em = models.DateTimeField(null=True, blank=True)
 
+    # Quanto de cada item sai do estoque do vidraceiro: {"<id do item>": "1"}.
+    # Não muda o preço para o cliente (o material é usado na obra), só o que
+    # é pedido ao fornecedor.
+    estoque_usado = models.JSONField(default=dict, blank=True)
+
     # Lembrete de orçamento parado (enviado ao cliente e sem resposta).
     lembrete_adiado_ate = models.DateTimeField(
         null=True, blank=True, help_text="Até quando o lembrete fica escondido (\"lembrar depois\")",
@@ -82,6 +87,9 @@ class LinhaProjeto(models.Model):
     quantidade = models.PositiveIntegerField(default=1)
     observacao = models.CharField(max_length=150, blank=True)
     ordem = models.PositiveIntegerField(default=0)
+    # Acompanhamento da obra: a peça foi produzida/instalada.
+    concluida = models.BooleanField(default=False)
+    concluida_em = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["ordem", "id"]

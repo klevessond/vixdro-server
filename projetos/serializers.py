@@ -1,3 +1,4 @@
+from decimal import Decimal
 import uuid
 
 from django.contrib.auth import get_user_model
@@ -67,7 +68,10 @@ class LinhaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = LinhaProjeto
-        fields = ("id", "produto", "nome", "largura_mm", "altura_mm", "quantidade", "observacao", "itens")
+        # concluida/concluida_em voltam do app ao salvar: as peças são regravadas
+        # a cada salvamento, e sem isso o acompanhamento se perderia.
+        fields = ("id", "produto", "nome", "largura_mm", "altura_mm", "quantidade", "observacao", "itens",
+                  "concluida", "concluida_em")
         read_only_fields = ("id",)
 
     def validate_produto(self, produto):
@@ -87,10 +91,12 @@ class ProjetoResumoSerializer(serializers.ModelSerializer):
 
     cliente_nome = serializers.CharField(source="cliente.nome", read_only=True)
     total_pecas = serializers.IntegerField(read_only=True)
+    pecas_concluidas = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Projeto
-        fields = ("id", "numero", "nome", "cliente", "cliente_nome", "status", "total_pecas", "atualizado_em")
+        fields = ("id", "numero", "nome", "cliente", "cliente_nome", "status", "total_pecas",
+                  "pecas_concluidas", "atualizado_em")
 
 
 class ProjetoSerializer(serializers.ModelSerializer):
@@ -115,7 +121,8 @@ class ProjetoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Projeto
         fields = ("id", "numero", "nome", "cliente", "cliente_nome", "status", "status_atualizado_em",
-                  "observacoes", "perda_percentual", *CAMPOS_PRECO, "linhas", "criado_em", "atualizado_em")
+                  "observacoes", "perda_percentual", *CAMPOS_PRECO, "estoque_usado", "linhas",
+                  "criado_em", "atualizado_em")
         # O status muda só pela ação própria (POST .../status/), nunca junto com a edição.
         read_only_fields = ("numero", "status", "status_atualizado_em", "criado_em", "atualizado_em")
 
@@ -136,6 +143,9 @@ class ProjetoSerializer(serializers.ModelSerializer):
         if not valor:
             raise serializers.ValidationError("Dê um nome ao projeto.")
         return valor
+
+    def validate_estoque_usado(self, valor):
+        return _validar_estoque(valor)
 
     @staticmethod
     def _salvar_linhas(projeto, linhas):
@@ -198,6 +208,25 @@ class LinhaCalculoSerializer(serializers.Serializer):
     itens = ItemCalculoSerializer(many=True)
 
 
+def _validar_estoque(valor):
+    """{"<id do item>": quantidade >= 0}. Zeros são descartados."""
+    if not isinstance(valor, dict):
+        raise serializers.ValidationError("Formato inválido.")
+    limpo = {}
+    for chave, qtd in valor.items():
+        if not str(chave).isdigit():
+            raise serializers.ValidationError("Item inválido.")
+        try:
+            d = Decimal(str(qtd).replace(",", "."))
+        except Exception:
+            raise serializers.ValidationError("Quantidade inválida.")
+        if d < 0:
+            raise serializers.ValidationError("A quantidade do estoque não pode ser negativa.")
+        if d > 0:
+            limpo[str(chave)] = format(d.normalize(), "f")
+    return limpo
+
+
 class CalculoSerializer(serializers.Serializer):
     perda_percentual = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=0, max_value=50, default=10)
     margem_percentual = serializers.DecimalField(max_digits=6, decimal_places=2, min_value=0, max_value=1000, default=0)
@@ -207,6 +236,10 @@ class CalculoSerializer(serializers.Serializer):
     valor_adicional = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0, default=0)
     desconto = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0, default=0)
     linhas = LinhaCalculoSerializer(many=True)
+    estoque_usado = serializers.JSONField(required=False, default=dict)
+
+    def validate_estoque_usado(self, valor):
+        return _validar_estoque(valor)
 
 
 class RegistroMedicaoSerializer(serializers.ModelSerializer):

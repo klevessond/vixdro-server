@@ -28,9 +28,10 @@ def criar_pedidos(projeto, vidraceiro):
     if projeto.pedidos.exclude(status__in=[Pedido.Status.ERRO, Pedido.Status.CANCELADO]).exists():
         raise ValidationError("Este projeto já tem pedido enviado ao fornecedor.")
 
-    lista = calcular_projeto_salvo(projeto)["lista_compra"]
+    # Só o que falta comprar: o que sai do estoque do vidraceiro não é pedido.
+    lista = [x for x in calcular_projeto_salvo(projeto)["lista_compra"] if Decimal(x["quantidade_pedir"]) > 0]
     if not lista:
-        raise ValidationError("A lista de compra está vazia.")
+        raise ValidationError("Nada a pedir: todos os itens deste projeto saem do seu estoque.")
 
     itens = ItemFornecedor.objects.select_related("fornecedor").in_bulk([x["item"] for x in lista])
     por_fornecedor = defaultdict(list)
@@ -51,7 +52,7 @@ def criar_pedidos(projeto, vidraceiro):
             total = Decimal(0)
             for x in linhas:
                 item = itens[x["item"]]
-                quantidade = Decimal(x["quantidade_compra"])
+                quantidade = Decimal(x["quantidade_pedir"])
                 subtotal = (quantidade * item.preco).quantize(Decimal("0.01"))
                 total += subtotal
                 ItemPedido.objects.create(

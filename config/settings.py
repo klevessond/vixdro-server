@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "projetos",
     "pedidos",
     "agenda",
+   "financeiro",
 
 ]
 

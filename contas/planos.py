@@ -28,7 +28,7 @@ RECURSOS = {
     "pro": [
         "Tudo do plano gratuito",
         "Agenda de medições e instalações, com mapa e aviso ao cliente",
-        "Financeiro: contas a receber e a pagar, parcelas e fluxo de caixa",
+        "Financeiro: contas a receber e a pagar, parcelas e cobranças do orçamento",
         "Estoque de perfis e sobras (em breve)",
         "Relatórios de vendas e margem (em breve)",
     ],
