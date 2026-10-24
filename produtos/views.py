@@ -30,8 +30,8 @@ class ProdutoViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         proprios = Q(vidraceiro=self.request.user)
         if self.action in ("update", "partial_update", "destroy"):
-            # Modelos prontos não são alterados pelo vidraceiro (só pela equipe, no admin).
-            filtro = proprios
+            # Modelos prontos só são alterados pela equipe (no app ou no admin).
+            filtro = proprios | Q(vidraceiro__isnull=True) if self.request.user.is_staff else proprios
         else:
             # Vê os próprios e os modelos prontos; os próprios aparecem primeiro.
             filtro = proprios | Q(vidraceiro__isnull=True)

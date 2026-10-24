@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import transaction
 from rest_framework import serializers
 
@@ -33,9 +35,8 @@ class ComponenteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"item": "Este fornecedor não está mais ativo."})
         regra = [attrs.get(c, 0) for c in ("coef_largura", "coef_altura", "coef_area", "ajuste")]
         if all(v == 0 for v in regra):
-            raise serializers.ValidationError(
-                f"Defina a regra de consumo de {attrs['item'].descricao}."
-            )
+            # Sem regra: quantidade fixa de 1 por peça (1 unidade, 1 m ou 1 m², conforme o item).
+            attrs["ajuste"] = Decimal(1)
         return attrs
 
 
@@ -43,7 +44,8 @@ class ProdutoSerializer(serializers.ModelSerializer):
     componentes = ComponenteSerializer(many=True)
     custo_referencia = serializers.SerializerMethodField()
     custo_depende_medida = serializers.SerializerMethodField()
-    padrao = serializers.BooleanField(read_only=True)  # modelo pronto da equipe
+    # Modelo pronto (visível para todos). Só contas da equipe podem marcar.
+    padrao = serializers.BooleanField(required=False)
 
     class Meta:
         model = Produto
@@ -95,16 +97,34 @@ class ProdutoSerializer(serializers.ModelSerializer):
             [Componente(produto=produto, ordem=i, **c) for i, c in enumerate(componentes)]
         )
 
+    def validate(self, attrs):
+        usuario = self.context["request"].user
+        modelo = attrs.get("padrao", self.instance.padrao if self.instance is not None else False)
+        if modelo and not usuario.is_staff:
+            raise serializers.ValidationError("Só a equipe do Orçaminio cria e altera modelos prontos.")
+        if modelo:
+            for c in attrs.get("componentes") or []:
+                if c["item"].fornecedor.vidraceiro_id is not None:
+                    raise serializers.ValidationError(
+                        f"\"{c['item'].descricao}\" é um item próprio: modelos prontos só usam itens do catálogo do fornecedor."
+                    )
+        return attrs
+
     @transaction.atomic
     def create(self, validated_data):
         componentes = validated_data.pop("componentes")
-        produto = Produto.objects.create(vidraceiro=self.context["request"].user, **validated_data)
+        modelo = validated_data.pop("padrao", False)
+        dono = None if modelo else self.context["request"].user
+        produto = Produto.objects.create(vidraceiro=dono, **validated_data)
         self._salvar_componentes(produto, componentes)
         return produto
 
     @transaction.atomic
     def update(self, instance, validated_data):
         componentes = validated_data.pop("componentes", None)
+        if "padrao" in validated_data:
+            # Equipe: marcar vira modelo pronto; desmarcar volta a ser um produto da própria conta.
+            instance.vidraceiro = None if validated_data.pop("padrao") else self.context["request"].user
         for campo, valor in validated_data.items():
             setattr(instance, campo, valor)
         instance.save()

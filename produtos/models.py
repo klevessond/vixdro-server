@@ -1,3 +1,4 @@
+from decimal import Decimal
 import uuid
 
 from django.conf import settings
@@ -69,6 +70,12 @@ class Componente(models.Model):
 
     def clean(self):
         from django.core.exceptions import ValidationError
+
+        # Sem nenhuma regra, o item entraria com consumo zero e custo zerado.
+        # Vale então quantidade fixa de 1 por peça (1 unidade, 1 m ou 1 m², conforme o item).
+        # Só quando NADA foi preenchido: o ajuste também soma às regras pela medida.
+        if self.item_id and not any([self.coef_largura, self.coef_altura, self.coef_area, self.ajuste]):
+            self.ajuste = Decimal(1)
 
         # Um modelo pronto aparece para todos: não pode usar o item próprio de um vidraceiro.
         produto = getattr(self, "produto", None)

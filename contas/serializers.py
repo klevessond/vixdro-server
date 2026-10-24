@@ -16,9 +16,12 @@ SENHA_MINIMA = 6
 class VidraceiroSerializer(serializers.ModelSerializer):
     """Dados do vidraceiro devolvidos ao app (nunca inclui a senha)."""
 
+    # Conta da equipe do Orçaminio: pode criar e editar modelos prontos pelo app.
+    equipe = serializers.BooleanField(source="is_staff", read_only=True)
+
     class Meta:
         model = Vidraceiro
-        fields = CAMPOS_PUBLICOS
+        fields = CAMPOS_PUBLICOS + ("equipe",)
         read_only_fields = CAMPOS_PUBLICOS
 
 
