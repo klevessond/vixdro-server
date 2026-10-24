@@ -18,8 +18,12 @@ class Produto(models.Model):
         OUTRO = "outro", "Outro"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # Vazio = MODELO PRONTO: criado pela equipe no admin e visível para todos
+    # os vidraceiros, que não podem alterá-lo (podem criar uma cópia própria).
     vidraceiro = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="produtos"
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="produtos",
+        null=True, blank=True,
+        help_text="Deixe vazio para um modelo pronto, disponível para todos os vidraceiros.",
     )
     nome = models.CharField(max_length=150)
     categoria = models.CharField(max_length=20, choices=Categoria.choices, default=Categoria.OUTRO)
@@ -33,6 +37,11 @@ class Produto(models.Model):
 
     def __str__(self):
         return self.nome
+
+    @property
+    def padrao(self) -> bool:
+        """Modelo pronto (da equipe), e não de um vidraceiro."""
+        return self.vidraceiro_id is None
 
 
 class Componente(models.Model):
@@ -57,6 +66,18 @@ class Componente(models.Model):
         max_length=10, choices=[("inteira", "Barra inteira"), ("metro", "Por metro usado")], default="inteira",
     )
     ordem = models.PositiveIntegerField(default=0)
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        # Um modelo pronto aparece para todos: não pode usar o item próprio de um vidraceiro.
+        produto = getattr(self, "produto", None)
+        if produto is not None and produto.vidraceiro_id is None and self.item_id:
+            if self.item.fornecedor.vidraceiro_id is not None:
+                raise ValidationError({
+                    "item": "Modelos prontos só podem usar itens do catálogo do fornecedor, "
+                            "e não itens próprios de um vidraceiro.",
+                })
 
     class Meta:
         ordering = ["ordem", "id"]

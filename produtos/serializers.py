@@ -4,7 +4,11 @@ from rest_framework import serializers
 from fornecedores.models import ItemFornecedor, item_visivel
 from fornecedores.serializers import ItemCatalogoSerializer
 
-from .calculo import modo
+from .calculo import calcular_produto, modo
+
+# Medida usada para mostrar o custo de um produto na lista (o custo real
+# depende do tamanho de cada peça).
+REFERENCIA_MM = 1000
 from .models import Componente, Produto
 
 
@@ -37,11 +41,31 @@ class ComponenteSerializer(serializers.ModelSerializer):
 
 class ProdutoSerializer(serializers.ModelSerializer):
     componentes = ComponenteSerializer(many=True)
+    custo_referencia = serializers.SerializerMethodField()
+    custo_depende_medida = serializers.SerializerMethodField()
+    padrao = serializers.BooleanField(read_only=True)  # modelo pronto da equipe
 
     class Meta:
         model = Produto
-        fields = ("id", "nome", "categoria", "descricao", "componentes", "atualizado_em")
+        fields = ("id", "nome", "categoria", "descricao", "componentes", "atualizado_em",
+                  "custo_referencia", "custo_depende_medida", "padrao")
         read_only_fields = ("id", "atualizado_em")
+
+    def _regras(self, obj):
+        return [
+            {"item": c.item, "coef_largura": c.coef_largura, "coef_altura": c.coef_altura,
+             "coef_area": c.coef_area, "ajuste": c.ajuste, "cobranca": c.cobranca}
+            for c in obj.componentes.all()
+        ]
+
+    def get_custo_referencia(self, obj):
+        """Custo dos itens numa peça de 1,00 x 1,00 m (ou o custo exato, se nada depende da medida)."""
+        return calcular_produto(self._regras(obj), REFERENCIA_MM, REFERENCIA_MM)["custo_total"]
+
+    def get_custo_depende_medida(self, obj):
+        return any(
+            c.coef_largura or c.coef_altura or c.coef_area for c in obj.componentes.all()
+        )
 
     def validate_nome(self, valor):
         valor = valor.strip()

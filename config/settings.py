@@ -88,8 +88,6 @@ TIME_ZONE = "America/Sao_Paulo"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -121,3 +119,21 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 DATA_UPLOAD_MAX_MEMORY_SIZE = 8 * 1024 * 1024
 
+STATIC_URL = "static/"
+
+# Pastas servidas pelo Nginx (fora do /root, que o Nginx não consegue ler).
+STATIC_ROOT = config("STATIC_ROOT", default=str(BASE_DIR / "staticfiles"))
+MEDIA_ROOT = config("MEDIA_ROOT", default=str(BASE_DIR / "media"))
+
+# Login do admin pelo domínio (o Django exige a origem na lista).
+CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
+
+# Atrás do Nginx: confia no aviso de HTTPS que ele manda. Sem isto, os
+# endereços das fotos e logomarcas sairiam com http:// mesmo no HTTPS.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# ATENÇÃO: depois de acrescentar estas linhas, APAGUE as duas antigas que
+# elas substituem, para não ficarem duplicadas:
+#   STATIC_ROOT = BASE_DIR / "staticfiles"   (do settings original, abaixo do STATIC_URL)
+#   MEDIA_ROOT = BASE_DIR / "media"          (da etapa da logomarca)
+# Duplicadas não quebram nada (vale a última do arquivo), mas confundem.
