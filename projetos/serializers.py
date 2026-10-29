@@ -10,6 +10,7 @@ from clientes.models import Cliente
 from fornecedores.models import ItemFornecedor, item_visivel
 from fornecedores.serializers import ItemCatalogoSerializer
 from produtos.calculo import modo
+from financeiro.models import CondicaoPagamento
 from produtos.models import Produto
 
 from .models import ItemLinha, LinhaProjeto, Projeto, RegistroMedicao
@@ -75,8 +76,12 @@ class LinhaSerializer(serializers.ModelSerializer):
         read_only_fields = ("id",)
 
     def validate_produto(self, produto):
-        # Só produtos do próprio vidraceiro.
-        if produto is not None and produto.vidraceiro_id != self.context["request"].user.pk:
+        # Produtos do próprio vidraceiro ou modelos prontos (sem dono). A peça só
+        # guarda de onde veio: um modelo desativado depois continua aceito, para não
+        # travar os projetos que já o usaram.
+        if produto is None or produto.vidraceiro_id is None:
+            return produto
+        if produto.vidraceiro_id != self.context["request"].user.pk:
             raise serializers.ValidationError("Produto não encontrado.")
         return produto
 
@@ -101,6 +106,9 @@ class ProjetoResumoSerializer(serializers.ModelSerializer):
 
 class ProjetoSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(required=False)
+    condicao_pagamento = serializers.PrimaryKeyRelatedField(
+        queryset=CondicaoPagamento.objects.none(), required=False, allow_null=True,
+    )
     cliente = serializers.PrimaryKeyRelatedField(
         queryset=Cliente.objects.none(),
         error_messages={
@@ -121,7 +129,7 @@ class ProjetoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Projeto
         fields = ("id", "numero", "nome", "cliente", "cliente_nome", "status", "status_atualizado_em",
-                  "observacoes", "perda_percentual", *CAMPOS_PRECO, "estoque_usado", "linhas",
+                  "observacoes", "perda_percentual", *CAMPOS_PRECO, "estoque_usado", "condicao_pagamento", "linhas",
                   "criado_em", "atualizado_em")
         # O status muda só pela ação própria (POST .../status/), nunca junto com a edição.
         read_only_fields = ("numero", "status", "status_atualizado_em", "criado_em", "atualizado_em")
@@ -132,6 +140,7 @@ class ProjetoSerializer(serializers.ModelSerializer):
         if request is not None:
             # Só é possível escolher clientes do próprio vidraceiro.
             self.fields["cliente"].queryset = Cliente.objects.filter(vidraceiro=request.user, ativo=True)
+            self.fields["condicao_pagamento"].queryset = CondicaoPagamento.objects.filter(vidraceiro=request.user)
 
     def validate(self, attrs):
         if self.instance is not None:

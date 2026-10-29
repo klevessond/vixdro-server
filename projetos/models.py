@@ -55,6 +55,11 @@ class Projeto(models.Model):
     # é pedido ao fornecedor.
     estoque_usado = models.JSONField(default=dict, blank=True)
 
+    # Forma de pagamento combinada com o cliente (usada ao gerar as contas a receber).
+    condicao_pagamento = models.ForeignKey(
+        "financeiro.CondicaoPagamento", on_delete=models.SET_NULL, null=True, blank=True, related_name="projetos",
+    )
+
     # Lembrete de orçamento parado (enviado ao cliente e sem resposta).
     lembrete_adiado_ate = models.DateTimeField(
         null=True, blank=True, help_text="Até quando o lembrete fica escondido (\"lembrar depois\")",

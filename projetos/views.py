@@ -11,6 +11,8 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from financeiro.condicoes import condicoes_para_orcamento
+
 from .calculo import calcular_projeto
 from .fotos import FotoInvalida, processar_base64
 from .models import Projeto, RegistroMedicao
@@ -171,7 +173,9 @@ class ProjetoViewSet(viewsets.ModelViewSet):
         s.is_valid(raise_exception=True)
         d = s.validated_data
         precificacao = {c: d[c] for c in CAMPOS_PRECO if c in d}
-        return Response(calcular_projeto(d["linhas"], d["perda_percentual"], precificacao, d.get("estoque_usado")))
+        calc = calcular_projeto(d["linhas"], d["perda_percentual"], precificacao, d.get("estoque_usado"))
+        calc["condicoes"] = condicoes_para_orcamento(request.user, calc["orcamento"]["total"])
+        return Response(calc)
 
     @action(detail=False, methods=["get"])
     def padroes(self, request):
@@ -216,7 +220,10 @@ def calcular_projeto_salvo(projeto):
         for ln in projeto.linhas.all()
     ]
     precificacao = {c: getattr(projeto, c) for c in CAMPOS_PRECO}
-    return calcular_projeto(linhas, projeto.perda_percentual, precificacao, projeto.estoque_usado)
+    calc = calcular_projeto(linhas, projeto.perda_percentual, precificacao, projeto.estoque_usado)
+    # Formas de pagamento com os valores já calculados (para o PDF do orçamento).
+    calc["condicoes"] = condicoes_para_orcamento(projeto.vidraceiro, calc["orcamento"]["total"])
+    return calc
 
 
 def orcamentos_parados(vidraceiro):
