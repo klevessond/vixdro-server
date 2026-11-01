@@ -33,6 +33,8 @@ class Fornecedor(models.Model):
         help_text="Nome da variável do .env que guarda a chave de acesso. "
         "A chave nunca fica no banco. Ex: FORNECEDOR_SERIDO_CHAVE",
     )
+    # Prazo para pagar os pedidos: o vencimento da conta a pagar criada no envio.
+    prazo_pagamento_dias = models.PositiveIntegerField("prazo de pagamento (dias)", default=30)
     ativo = models.BooleanField(default=True)
 
     # Controle da sincronização

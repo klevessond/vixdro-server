@@ -21,7 +21,7 @@ from projetos.views import calcular_projeto_salvo
 from django.db.models import Case, DateField, F, When
 
 from .condicoes import garantir_condicoes, garantir_contas, simular
-from .models import TIPO_CONTA_POR_FORMA, CondicaoPagamento, Conta, Lancamento
+from .models import CATEGORIAS_MATERIAL, TIPO_CONTA_POR_FORMA, CondicaoPagamento, Conta, Lancamento
 from .serializers import (
     CobrancasProjetoSerializer,
     CondicaoPagamentoSerializer,
@@ -151,7 +151,7 @@ class LancamentoViewSet(viewsets.ModelViewSet):
         criados = self._criar_parcelas(
             tipo=d["tipo"], descricao=d["descricao"].strip(), categoria=d["categoria"],
             valores=dividir(d["valor_total"], d["parcelas"]),
-            vencimentos=[somar_meses(d["primeiro_vencimento"], i) for i in range(d["parcelas"])],
+            vencimentos=datas_parcelas(d, d["parcelas"], d["primeiro_vencimento"]),
             cliente=d.get("cliente") or (projeto.cliente if projeto else None), projeto=projeto,
             observacoes=d["observacoes"],
         )
@@ -185,7 +185,7 @@ class LancamentoViewSet(viewsets.ModelViewSet):
             criados += self._criar_parcelas(
                 tipo="receber", descricao=f"Restante - {nome}" if n == 1 else f"Parcela - {nome}",
                 categoria="Orçamento", valores=dividir(restante, n),
-                vencimentos=[somar_meses(d["primeiro_vencimento"], i) for i in range(n)],
+                vencimentos=datas_parcelas(d, n, d["primeiro_vencimento"]),
                 cliente=projeto.cliente, projeto=projeto,
             )
         return Response(self.get_serializer(criados, many=True).data, status=status.HTTP_201_CREATED)
@@ -217,12 +217,22 @@ class LancamentoViewSet(viewsets.ModelViewSet):
                 criados += self._criar_parcelas(
                     tipo="receber", descricao=(f"Restante - {nome}" if n == 1 else f"Parcela - {nome}"),
                     categoria="Orçamento", valores=dividir(resto, n),
-                    vencimentos=[somar_meses(inicio, i) for i in range(n)],
+                    vencimentos=datas_parcelas(d, n, inicio),
                     cliente=projeto.cliente, projeto=projeto, observacoes=c.nome,
                 )
         projeto.condicao_pagamento = c
         projeto.save(update_fields=["condicao_pagamento"])
         return Response(self.get_serializer(criados, many=True).data, status=status.HTTP_201_CREATED)
+
+
+def datas_parcelas(d, n, inicio):
+    """As datas escolhidas uma a uma (se vieram, e na quantidade certa); senão, mensais."""
+    datas = d.get("vencimentos") or []
+    if len(datas) == n:
+        return list(datas)
+    if datas:
+        raise ValidationError({"vencimentos": f"Informe {n} datas, uma para cada parcela."})
+    return [somar_meses(inicio, i) for i in range(n)]
 
 
 def filtrar_periodo(qs, p):
@@ -330,6 +340,71 @@ class ResumoView(APIView):
             },
             "contas": ContaSerializer(contas, many=True).data,
             "categorias": Lancamento.CATEGORIAS,
+        })
+
+
+class DREView(APIView):
+    """GET /api/v1/financeiro/dre/?mes=AAAA-MM  (ou ?de=&ate=, ou ?mes=todos)
+
+    DRE simples em REGIME DE CAIXA: só o que efetivamente entrou e saiu no período
+    (lançamentos pagos, pela data do pagamento).
+        Receitas
+      - Custo do material (alumínio, vidro, acessórios)
+      = Lucro bruto
+      - Despesas operacionais (por categoria)
+      = Resultado do período
+    E o resultado por obra (acumulado, desde o início), das obras com movimento no período."""
+
+    permission_classes = [IsAuthenticated, RequerPro]
+
+    def get(self, request):
+        pagos = Lancamento.objects.filter(vidraceiro=request.user, pago=True)
+        periodo = filtrar_periodo(pagos, request.query_params)
+
+        def soma(qs):
+            return Decimal(qs.aggregate(t=Sum("valor"))["t"] or 0).quantize(CENTAVO)
+
+        def pct(parte, total):
+            return str((parte / total * 100).quantize(Decimal("0.1"))) if total else None
+
+        receitas = periodo.filter(tipo="receber")
+        despesas = periodo.filter(tipo="pagar")
+        receita = soma(receitas)
+        material = soma(despesas.filter(categoria__in=CATEGORIAS_MATERIAL))
+        bruto = receita - material
+        operacionais = [
+            {"categoria": linha["categoria"] or "Sem categoria", "valor": str(Decimal(linha["total"]).quantize(CENTAVO))}
+            for linha in despesas.exclude(categoria__in=CATEGORIAS_MATERIAL)
+            .values("categoria").annotate(total=Sum("valor")).order_by("-total")
+        ]
+        total_operacional = sum((Decimal(x["valor"]) for x in operacionais), Decimal(0))
+        resultado = bruto - total_operacional
+
+        # Resultado por obra: tudo o que entrou e saiu ligado a cada projeto (acumulado).
+        obras = []
+        ids = set(periodo.exclude(projeto__isnull=True).values_list("projeto_id", flat=True))
+        for projeto_id in ids:
+            doprojeto = pagos.filter(projeto_id=projeto_id)
+            recebido = soma(doprojeto.filter(tipo="receber"))
+            gasto = soma(doprojeto.filter(tipo="pagar"))
+            p = doprojeto.select_related("projeto__cliente").first().projeto
+            obras.append({
+                "projeto": str(projeto_id), "numero": p.numero, "nome": p.nome, "cliente": p.cliente.nome,
+                "recebido": str(recebido), "gasto": str(gasto), "lucro": str(recebido - gasto),
+                "margem": pct(recebido - gasto, recebido),
+            })
+        obras.sort(key=lambda o: Decimal(o["lucro"]), reverse=True)
+
+        return Response({
+            "receitas": str(receita),
+            "custo_material": str(material),
+            "lucro_bruto": str(bruto),
+            "margem_bruta": pct(bruto, receita),
+            "despesas_operacionais": operacionais,
+            "total_despesas_operacionais": str(total_operacional.quantize(CENTAVO)),
+            "resultado": str(resultado.quantize(CENTAVO)),
+            "margem_liquida": pct(resultado, receita),
+            "obras": obras,
         })
 
 

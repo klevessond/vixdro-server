@@ -1,3 +1,4 @@
+from datetime import timedelta
 """Criação, envio e acompanhamento de pedidos aos fornecedores."""
 
 from collections import defaultdict
@@ -103,11 +104,33 @@ def _aplicar_resposta(pedido, resposta):
     pedido.erro = ""
 
 
+def criar_conta_a_pagar(pedido):
+    """Pedido aceito pelo fornecedor vira uma conta a pagar (plano Pro), uma única vez.
+    Vencimento: hoje + o prazo de pagamento do fornecedor."""
+    from financeiro.models import Lancamento  # evita importação circular
+
+    v = pedido.vidraceiro
+    if not v.tem_pro or pedido.total <= 0 or pedido.lancamentos.exists():
+        return None
+    projeto = pedido.projeto
+    referencia = f"Orçamento nº {projeto.numero}" if projeto.numero else projeto.nome
+    return Lancamento.objects.create(
+        vidraceiro=v, tipo=Lancamento.Tipo.PAGAR, categoria="Fornecedor de alumínio",
+        descricao=f"Pedido {pedido.fornecedor.nome} - {referencia} - {projeto.cliente.nome}",
+        valor=pedido.total,
+        vencimento=timezone.localdate() + timedelta(days=pedido.fornecedor.prazo_pagamento_dias),
+        projeto=projeto, cliente=projeto.cliente, pedido=pedido,
+        observacoes="Criada no envio do pedido. Ajuste o valor se a nota fiscal vier diferente.",
+    )
+
+
 def enviar(pedido):
     try:
         resposta = adaptador_para(pedido.fornecedor).enviar_pedido(_payload(pedido))
         _aplicar_resposta(pedido, resposta)
         pedido.enviado_em = timezone.now()
+        pedido.save()
+        criar_conta_a_pagar(pedido)
     except ErroFornecedor as e:
         pedido.status = Pedido.Status.ERRO
         pedido.erro = str(e)
@@ -125,6 +148,9 @@ def atualizar(pedido):
     try:
         _aplicar_resposta(pedido, adaptador_para(pedido.fornecedor).consultar_pedido(str(pedido.id)))
         pedido.save()
+        if pedido.status == Pedido.Status.CANCELADO:
+            # Pedido cancelado pelo fornecedor: a conta a pagar (ainda não paga) sai.
+            pedido.lancamentos.filter(pago=False).delete()
     except (ErroFornecedor, NotImplementedError) as e:
         raise ValidationError(f"Não foi possível consultar o fornecedor: {e}")
     return pedido

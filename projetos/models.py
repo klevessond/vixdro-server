@@ -15,6 +15,7 @@ class Projeto(models.Model):
         RASCUNHO = "rascunho", "Rascunho"
         ENVIADO = "enviado", "Enviado ao cliente"
         APROVADO = "aprovado", "Aprovado"
+        CONCLUIDO = "concluido", "Concluído"  # obra entregue
         RECUSADO = "recusado", "Recusado"
 
     # Gerado no app (como nos clientes), para a versão offline no futuro.

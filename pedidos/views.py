@@ -49,6 +49,19 @@ class PedidoViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.G
             raise ValidationError("Só é possível reenviar um pedido que falhou.")
         return Response(PedidoSerializer(enviar(pedido)).data)
 
+    @action(detail=True, methods=["post"])
+    def receber(self, request, pk=None):
+        """POST /api/v1/pedidos/<id>/receber/  mercadoria chegou: entra no estoque (Pro), uma única vez."""
+        from contas.planos import RequerPro
+        from estoque.servico import receber_pedido
+
+        RequerPro().has_permission(request, self)
+        pedido = self.get_object()
+        if pedido.status in ("erro", "cancelado", "enviando"):
+            raise ValidationError("Este pedido não foi aceito pelo fornecedor.")
+        n = receber_pedido(pedido)
+        return Response({"entradas": n, "ja_recebido": n == 0})
+
     @action(detail=True, methods=["post"], url_path="atualizar")
     def atualizar_status(self, request, pk=None):
         return Response(PedidoSerializer(atualizar(self.get_object())).data)

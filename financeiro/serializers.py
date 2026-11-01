@@ -68,6 +68,7 @@ class ParcelamentoSerializer(serializers.Serializer):
     cliente = serializers.PrimaryKeyRelatedField(queryset=Cliente.objects.none(), required=False, allow_null=True)
     projeto = serializers.PrimaryKeyRelatedField(queryset=Projeto.objects.none(), required=False, allow_null=True)
     observacoes = serializers.CharField(required=False, allow_blank=True, default="")
+    vencimentos = serializers.ListField(child=serializers.DateField(), required=False, max_length=60)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -88,6 +89,8 @@ class CobrancasProjetoSerializer(serializers.Serializer):
     vencimento_entrada = serializers.DateField()
     parcelas_restantes = serializers.IntegerField(min_value=0, max_value=60, required=False, default=0)
     primeiro_vencimento = serializers.DateField(required=False)
+    # Datas de cada parcela (sem a entrada), quando o vidraceiro as escolhe uma a uma.
+    vencimentos = serializers.ListField(child=serializers.DateField(), required=False, max_length=60)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -6,7 +6,7 @@ from .models import Fornecedor, ItemFornecedor, Sincronizacao
 
 @admin.register(Fornecedor)
 class FornecedorAdmin(admin.ModelAdmin):
-    list_display = ("nome", "slug", "adaptador", "ativo", "cursor_sincronizacao", "ultima_carga_completa")
+    list_display = ("nome", "slug", "adaptador", "prazo_pagamento_dias", "ativo", "cursor_sincronizacao", "ultima_carga_completa")
     prepopulated_fields = {"slug": ("nome",)}
     readonly_fields = ("cursor_sincronizacao", "ultima_carga_completa")
 

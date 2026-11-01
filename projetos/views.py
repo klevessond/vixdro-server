@@ -11,6 +11,8 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from estoque.servico import enriquecer_lista_compra
+from estoque.servico import tentar_sincronizar as baixar_estoque
 from financeiro.condicoes import condicoes_para_orcamento
 
 from .calculo import calcular_projeto
@@ -58,7 +60,11 @@ class ProjetoViewSet(viewsets.ModelViewSet):
             cliente = self.request.query_params.get("cliente")
             if cliente:
                 qs = qs.filter(cliente_id=cliente)
-            return qs.annotate(total_pecas=Sum("linhas__quantidade"))
+            status_filtro = self.request.query_params.get("status")
+            if status_filtro in Projeto.Status.values:
+                qs = qs.filter(status=status_filtro)
+            # Mais recente primeiro (pela última alteração).
+            return qs.annotate(total_pecas=Sum("linhas__quantidade")).order_by("-atualizado_em")
         return qs.prefetch_related("linhas__itens__item")
 
     def create(self, request, *args, **kwargs):
@@ -82,7 +88,8 @@ class ProjetoViewSet(viewsets.ModelViewSet):
             raise ValidationError(
                 "Este projeto já tem pedido enviado ao fornecedor e não pode mais ser alterado."
             )
-        serializer.save()
+        projeto = serializer.save()
+        baixar_estoque(projeto)  # peças concluídas que mudaram: acerta a saída de material
 
     def perform_destroy(self, instance):
         if _tem_pedido_enviado(instance):
@@ -96,13 +103,15 @@ class ProjetoViewSet(viewsets.ModelViewSet):
         novo = request.data.get("status")
         if novo not in Projeto.Status.values:
             raise ValidationError({"status": f"Use um destes: {', '.join(Projeto.Status.values)}."})
-        if novo != Projeto.Status.APROVADO and _tem_pedido_enviado(projeto):
+        # Com pedido enviado, o projeto só pode ficar aprovado ou ser concluído (obra entregue).
+        if novo not in (Projeto.Status.APROVADO, Projeto.Status.CONCLUIDO) and _tem_pedido_enviado(projeto):
             raise ValidationError({"status": "Já existe pedido enviado ao fornecedor para este projeto."})
         projeto.status = novo
         projeto.status_atualizado_em = timezone.now()
         # Mudou a situação: o lembrete recomeça do zero.
         projeto.lembrete_adiado_ate = None
         projeto.save(update_fields=["status", "status_atualizado_em", "lembrete_adiado_ate", "atualizado_em"])
+        baixar_estoque(projeto)  # concluído: sai o material das peças que faltavam
         return Response({"status": projeto.status, "status_atualizado_em": projeto.status_atualizado_em})
 
     @action(detail=False, methods=["get"])
@@ -140,6 +149,7 @@ class ProjetoViewSet(viewsets.ModelViewSet):
         linha.concluida = bool(request.data.get("concluida", True))
         linha.concluida_em = timezone.now() if linha.concluida else None
         linha.save(update_fields=["concluida", "concluida_em"])
+        baixar_estoque(projeto)  # peça pronta: o material dela sai do estoque (ou volta, se desmarcada)
         total = projeto.linhas.aggregate(t=Sum("quantidade"))["t"] or 0
         feitas = projeto.linhas.filter(concluida=True).aggregate(t=Sum("quantidade"))["t"] or 0
         return Response({"linha": linha.pk, "concluida": linha.concluida, "concluida_em": linha.concluida_em,
@@ -174,6 +184,7 @@ class ProjetoViewSet(viewsets.ModelViewSet):
         d = s.validated_data
         precificacao = {c: d[c] for c in CAMPOS_PRECO if c in d}
         calc = calcular_projeto(d["linhas"], d["perda_percentual"], precificacao, d.get("estoque_usado"))
+        enriquecer_lista_compra(request.user, calc["lista_compra"])
         calc["condicoes"] = condicoes_para_orcamento(request.user, calc["orcamento"]["total"])
         return Response(calc)
 
@@ -221,6 +232,7 @@ def calcular_projeto_salvo(projeto):
     ]
     precificacao = {c: getattr(projeto, c) for c in CAMPOS_PRECO}
     calc = calcular_projeto(linhas, projeto.perda_percentual, precificacao, projeto.estoque_usado)
+    enriquecer_lista_compra(projeto.vidraceiro, calc["lista_compra"])  # saldo em estoque (Pro)
     # Formas de pagamento com os valores já calculados (para o PDF do orçamento).
     calc["condicoes"] = condicoes_para_orcamento(projeto.vidraceiro, calc["orcamento"]["total"])
     return calc

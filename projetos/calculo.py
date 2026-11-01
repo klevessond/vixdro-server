@@ -118,6 +118,9 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None, estoque_usado=
         custo_compra += custo_pedir
         lista_compra.append({
             "item": item.pk,
+            # Item próprio do vidraceiro: comprado fora do pedido ao fornecedor.
+            "proprio": item.fornecedor.vidraceiro_id is not None,
+            "fornecedor": item.fornecedor.nome,
             "codigo": item.codigo,
             "descricao": item.descricao,
             "item_ativo": item.ativo,

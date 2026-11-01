@@ -28,8 +28,10 @@ RECURSOS = {
     "pro": [
         "Tudo do plano gratuito",
         "Agenda de medições e instalações, com mapa e aviso ao cliente",
-        "Financeiro: contas a receber e a pagar, parcelas e cobranças do orçamento",
-        "Estoque de perfis e sobras (em breve)",
+        "Financeiro: contas a receber e a pagar, contas de caixa e cobranças geradas pelo orçamento",
+        "Pedido ao fornecedor e compras da obra viram contas a pagar",
+        "DRE simples, com o lucro de cada obra",
+        "Estoque de materiais: saldos, pedidos recebidos e baixa automática nas obras",
         "Relatórios de vendas e margem (em breve)",
     ],
 }

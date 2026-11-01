@@ -12,7 +12,8 @@ urlpatterns = [
     path("api/v1/", include("projetos.urls")),
     path("api/v1/", include("pedidos.urls")),
     path("api/v1/", include("agenda.urls")),
-   path("api/v1/", include("financeiro.urls")),
+    path("api/v1/", include("financeiro.urls")),
+    path("api/v1/", include("estoque.urls")),
 ]
 
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

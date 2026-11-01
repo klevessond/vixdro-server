@@ -14,7 +14,13 @@ class PedidoSerializer(serializers.ModelSerializer):
     status_texto = serializers.CharField(source="get_status_display", read_only=True)
     itens = ItemPedidoSerializer(many=True, read_only=True)
 
+    # Mercadoria já recebida (entrou no estoque)?
+    recebido = serializers.SerializerMethodField()
+
+    def get_recebido(self, obj):
+        return obj.movimentos_estoque.exists()
+
     class Meta:
         model = Pedido
-        fields = ("id", "projeto", "fornecedor", "fornecedor_nome", "status", "status_texto",
+        fields = ("id", "projeto", "fornecedor", "fornecedor_nome", "status", "status_texto", "recebido",
                   "numero_fornecedor", "total", "erro", "criado_em", "enviado_em", "itens")

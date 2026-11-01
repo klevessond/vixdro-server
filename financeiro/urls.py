@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
-from .views import CondicaoPagamentoViewSet, ContaViewSet, LancamentoViewSet, ResumoView
+from .views import CondicaoPagamentoViewSet, ContaViewSet, DREView, LancamentoViewSet, ResumoView
 
 router = SimpleRouter()
 router.register("financeiro/lancamentos", LancamentoViewSet, basename="lancamento")
@@ -10,4 +10,5 @@ router.register("condicoes-pagamento", CondicaoPagamentoViewSet, basename="condi
 
 urlpatterns = router.urls + [
     path("financeiro/resumo/", ResumoView.as_view(), name="financeiro-resumo"),
+    path("financeiro/dre/", DREView.as_view(), name="financeiro-dre"),
 ]

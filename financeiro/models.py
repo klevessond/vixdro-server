@@ -40,6 +40,8 @@ class Lancamento(models.Model):
     forma = models.CharField(max_length=15, choices=Forma.choices, blank=True)
     # Conta onde o dinheiro entrou ou saiu (quando pago).
     conta = models.ForeignKey("Conta", on_delete=models.SET_NULL, null=True, blank=True, related_name="lancamentos")
+    # Conta a pagar criada sozinha pelo pedido ao fornecedor.
+    pedido = models.ForeignKey("pedidos.Pedido", on_delete=models.SET_NULL, null=True, blank=True, related_name="lancamentos")
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name="lancamentos")
     projeto = models.ForeignKey(Projeto, on_delete=models.SET_NULL, null=True, blank=True, related_name="lancamentos")
     # Parcelamento: as parcelas de um mesmo lançamento compartilham o grupo.
@@ -121,6 +123,10 @@ CONTAS_INICIAIS = [
     dict(nome="Banco", tipo="banco"),
     dict(nome="Cartão", tipo="cartao"),
 ]
+
+# Categorias que contam como CUSTO DO MATERIAL no DRE (as outras de "pagar"
+# são despesas operacionais).
+CATEGORIAS_MATERIAL = {"Fornecedor de alumínio", "Vidro", "Acessórios"}
 
 # Conta sugerida pela forma de pagamento.
 TIPO_CONTA_POR_FORMA = {

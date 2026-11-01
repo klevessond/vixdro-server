@@ -12,6 +12,7 @@ from produtos.models import Componente, Produto
 
 from agenda.views import resumo_agenda
 from contas.planos import resumo_plano
+from estoque.views import resumo_painel as resumo_estoque
 from financeiro.views import resumo_painel as resumo_financeiro
 
 from .models import Projeto
@@ -53,7 +54,7 @@ class PainelView(APIView):
                 "novos_mes": clientes.filter(criado_em__gte=inicio_mes).count(),
             },
             "projetos": {
-                "ativos": projetos.exclude(status=Projeto.Status.RECUSADO).count(),
+                "ativos": projetos.exclude(status__in=[Projeto.Status.RECUSADO, Projeto.Status.CONCLUIDO]).count(),
                 "aguardando_cliente": projetos.filter(status=Projeto.Status.ENVIADO).count(),
                 # Lembrete: enviados ao cliente e sem resposta há mais de N dias.
                 "parados": orcamentos_parados(v).count(),
@@ -66,6 +67,7 @@ class PainelView(APIView):
             },
             "agenda": resumo_agenda(v),
             "financeiro": resumo_financeiro(v),
+            "estoque": resumo_estoque(v),
             "plano": {k: val for k, val in resumo_plano(v).items() if k != "recursos"},
             "produtos": Produto.objects.filter(vidraceiro=v, ativo=True).count(),
             "meus_itens": ItemFornecedor.objects.filter(fornecedor__vidraceiro=v, ativo=True).count(),
