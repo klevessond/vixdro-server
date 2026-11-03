@@ -50,6 +50,14 @@ class ConfigItemEstoque(models.Model):
         unique_together = ("vidraceiro", "item")
 
 
+def _caminho_imagem(peca, nome):
+    return f"pecas_prontas/{uuid.uuid4().hex}.jpg"
+
+
+def _caminho_miniatura(peca, nome):
+    return f"pecas_prontas/mini/{uuid.uuid4().hex}.jpg"
+
+
 class PecaPronta(models.Model):
     """Peça produzida para o estoque: um produto numa medida (ex: janela de
     correr 1,20 x 1,00 m). O saldo é a soma dos movimentos dela."""
@@ -61,6 +69,9 @@ class PecaPronta(models.Model):
     largura_mm = models.PositiveIntegerField(default=0)
     altura_mm = models.PositiveIntegerField(default=0)
     observacao = models.CharField(max_length=100, blank=True)  # ex: cor, lado de abertura
+    # Foto própria (opcional): sem ela, aparece a foto do produto.
+    imagem = models.ImageField(upload_to=_caminho_imagem, blank=True)
+    miniatura = models.ImageField(upload_to=_caminho_miniatura, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 
     class Meta:

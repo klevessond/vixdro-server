@@ -7,6 +7,14 @@ from django.db import models
 from fornecedores.models import ItemFornecedor
 
 
+def _caminho_imagem(produto, nome):
+    return f"produtos/{uuid.uuid4().hex}.jpg"  # nome aleatório
+
+
+def _caminho_miniatura(produto, nome):
+    return f"produtos/mini/{uuid.uuid4().hex}.jpg"
+
+
 class Produto(models.Model):
     """Modelo que o vidraceiro monta uma vez e reutiliza nos projetos.
     Ex: "Janela veneziana 2 folhas". Guarda regras de consumo, não quantidades."""
@@ -35,6 +43,10 @@ class Produto(models.Model):
 
     class Meta:
         ordering = ["nome"]
+
+    # Foto do produto (aparece na lista, na escolha do projeto e nas peças prontas).
+    imagem = models.ImageField(upload_to=_caminho_imagem, blank=True)
+    miniatura = models.ImageField(upload_to=_caminho_miniatura, blank=True)
 
     def __str__(self):
         return self.nome

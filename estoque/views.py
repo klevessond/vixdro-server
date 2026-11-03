@@ -223,11 +223,18 @@ def _medidas_e_quantidade(request):
     return largura, altura, qtd
 
 
-def _resumo_peca(p):
+def _resumo_peca(p, request=None):
+    from projetos.fotos import url_de
+
+    # Sem foto própria, vale a do produto.
+    origem = p if p.imagem else (p.produto if p.produto_id and p.produto.imagem else None)
     return {
         "id": str(p.id), "produto": str(p.produto_id) if p.produto_id else None, "nome": p.nome,
         "largura_mm": p.largura_mm, "altura_mm": p.altura_mm, "observacao": p.observacao,
         "saldo": saldo_peca(p), "custo_unitario": str(custo_peca(p)),
+        "imagem_url": url_de(request, origem.imagem) if origem else None,
+        "miniatura_url": url_de(request, origem.miniatura) if origem else None,
+        "imagem_propria": bool(p.imagem),
     }
 
 
@@ -244,7 +251,7 @@ class PecasProntasView(APIView):
         for campo in ("largura_mm", "altura_mm"):
             if p.get(campo):
                 qs = qs.filter(**{campo: p[campo]})
-        lista = [_resumo_peca(x) for x in qs]
+        lista = [_resumo_peca(x, request) for x in qs.select_related("produto")]
         if p.get("com_saldo"):
             lista = [x for x in lista if x["saldo"] > 0]
         return Response(lista)
@@ -255,7 +262,7 @@ class PecaProntaView(APIView):
 
     def get(self, request, peca_id):
         peca = get_object_or_404(PecaPronta, pk=peca_id, vidraceiro=request.user)
-        dados = _resumo_peca(peca)
+        dados = _resumo_peca(peca, request)
         dados["movimentos"] = [{
             "id": str(m.id), "quantidade": m.quantidade, "motivo": m.motivo, "motivo_texto": m.get_motivo_display(),
             "observacao": m.observacao, "projeto": str(m.projeto_id) if m.projeto_id else None,
@@ -284,7 +291,7 @@ class PecaProntaView(APIView):
             raise ValidationError({"motivo": "Use contagem ou saida."})
         if q:
             MovimentoPeca.objects.create(peca=peca, quantidade=q, motivo=motivo, observacao=str(request.data.get("observacao", ""))[:200])
-        return Response(_resumo_peca(peca))
+        return Response(_resumo_peca(peca, request))
 
 
 class SimularProducaoView(APIView):
@@ -301,4 +308,26 @@ class ProduzirView(APIView):
     def post(self, request):
         largura, altura, qtd = _medidas_e_quantidade(request)
         peca = produzir(request.user, _produto(request), largura, altura, qtd, str(request.data.get("observacao", ""))[:100])
-        return Response(_resumo_peca(peca), status=201)
+        return Response(_resumo_peca(peca, request), status=201)
+
+
+class ImagemPecaView(APIView):
+    """POST {"imagem_base64"} troca a foto da peça pronta; DELETE volta a usar a do produto."""
+
+    permission_classes = [IsAuthenticated, RequerPro]
+
+    def _trocar(self, request, peca_id, texto):
+        from projetos.fotos import FotoInvalida, trocar_imagem
+
+        peca = get_object_or_404(PecaPronta, pk=peca_id, vidraceiro=request.user)
+        try:
+            trocar_imagem(peca, texto)
+        except FotoInvalida as e:
+            raise ValidationError({"imagem_base64": str(e)})
+        return Response(_resumo_peca(peca, request))
+
+    def post(self, request, peca_id):
+        return self._trocar(request, peca_id, request.data.get("imagem_base64", ""))
+
+    def delete(self, request, peca_id):
+        return self._trocar(request, peca_id, "")

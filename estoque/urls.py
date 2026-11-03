@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     EntradaProjetoView,
+    ImagemPecaView,
     ItemView,
     ItensView,
     MinimoView,
@@ -22,4 +23,5 @@ urlpatterns = [
     path("estoque/pecas/simular/", SimularProducaoView.as_view()),
     path("estoque/pecas/produzir/", ProduzirView.as_view()),
     path("estoque/pecas/<uuid:peca_id>/", PecaProntaView.as_view()),
+    path("estoque/pecas/<uuid:peca_id>/imagem/", ImagemPecaView.as_view()),
 ]

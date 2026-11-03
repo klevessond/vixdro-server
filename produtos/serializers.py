@@ -46,11 +46,13 @@ class ProdutoSerializer(serializers.ModelSerializer):
     custo_depende_medida = serializers.SerializerMethodField()
     # Modelo pronto (visível para todos). Só contas da equipe podem marcar.
     padrao = serializers.BooleanField(required=False)
+    imagem_url = serializers.SerializerMethodField()
+    miniatura_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Produto
         fields = ("id", "nome", "categoria", "descricao", "componentes", "atualizado_em",
-                  "custo_referencia", "custo_depende_medida", "padrao")
+                  "custo_referencia", "custo_depende_medida", "padrao", "imagem_url", "miniatura_url")
         read_only_fields = ("id", "atualizado_em")
 
     def _regras(self, obj):
@@ -59,6 +61,16 @@ class ProdutoSerializer(serializers.ModelSerializer):
              "coef_area": c.coef_area, "ajuste": c.ajuste, "cobranca": c.cobranca}
             for c in obj.componentes.all()
         ]
+
+    def get_imagem_url(self, obj):
+        from projetos.fotos import url_de
+
+        return url_de(self.context.get("request"), obj.imagem)
+
+    def get_miniatura_url(self, obj):
+        from projetos.fotos import url_de
+
+        return url_de(self.context.get("request"), obj.miniatura)
 
     def get_custo_referencia(self, obj):
         """Custo dos itens numa peça de 1,00 x 1,00 m (ou o custo exato, se nada depende da medida)."""

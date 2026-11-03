@@ -2,6 +2,7 @@ from django.db import transaction
 from django.db.models import Case, IntegerField, Q, When
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from .calculo import calcular_produto
@@ -41,6 +42,21 @@ class ProdutoViewSet(viewsets.ModelViewSet):
             .order_by("_modelo", "nome")
             .prefetch_related("componentes__item")
         )
+
+    @action(detail=True, methods=["post", "delete"])
+    def imagem(self, request, pk=None):
+        """POST {"imagem_base64"} troca a foto do produto; DELETE remove.
+        Modelo pronto: só a equipe."""
+        from projetos.fotos import FotoInvalida, trocar_imagem
+
+        produto = self.get_object()
+        if produto.vidraceiro_id != request.user.pk and not (produto.padrao and request.user.is_staff):
+            raise PermissionDenied("Só a equipe do Orçaminio troca a foto de um modelo pronto.")
+        try:
+            trocar_imagem(produto, "" if request.method == "DELETE" else request.data.get("imagem_base64", ""))
+        except FotoInvalida as e:
+            raise ValidationError({"imagem_base64": str(e)})
+        return Response(self.get_serializer(self.get_queryset().get(pk=produto.pk)).data)
 
     @action(detail=True, methods=["post"])
     @transaction.atomic
