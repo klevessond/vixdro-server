@@ -190,3 +190,115 @@ def resumo_painel(vidraceiro):
     mins = minimos(vidraceiro)
     abaixo = sum(1 for i, m in mins.items() if m and Decimal(s.get(i, 0)) < m)
     return {"disponivel": True, "itens": len([x for x in s.values() if x]), "abaixo_minimo": abaixo}
+
+
+# ---------- Peças prontas ----------
+
+from django.db.models import Q as _Q  # noqa: E402
+
+from produtos.models import Produto  # noqa: E402
+
+from .models import MovimentoPeca, PecaPronta  # noqa: E402
+from .servico import custo_peca, produzir, saldo_peca, simular_producao  # noqa: E402
+
+
+def _produto(request):
+    p = Produto.objects.filter(
+        _Q(vidraceiro=request.user) | _Q(vidraceiro__isnull=True), pk=request.data.get("produto"), ativo=True,
+    ).first()
+    if p is None:
+        raise ValidationError({"produto": "Produto não encontrado."})
+    return p
+
+
+def _medidas_e_quantidade(request):
+    try:
+        largura = int(request.data.get("largura_mm") or 0)
+        altura = int(request.data.get("altura_mm") or 0)
+        qtd = int(request.data.get("quantidade") or 0)
+    except (TypeError, ValueError):
+        raise ValidationError("Medidas e quantidade precisam ser números.")
+    if not 1 <= qtd <= 999:
+        raise ValidationError({"quantidade": "Informe de 1 a 999 peças."})
+    return largura, altura, qtd
+
+
+def _resumo_peca(p):
+    return {
+        "id": str(p.id), "produto": str(p.produto_id) if p.produto_id else None, "nome": p.nome,
+        "largura_mm": p.largura_mm, "altura_mm": p.altura_mm, "observacao": p.observacao,
+        "saldo": saldo_peca(p), "custo_unitario": str(custo_peca(p)),
+    }
+
+
+class PecasProntasView(APIView):
+    """GET ?produto=&largura_mm=&altura_mm= (para achar as iguais a uma peça do projeto)."""
+
+    permission_classes = [IsAuthenticated, RequerPro]
+
+    def get(self, request):
+        qs = PecaPronta.objects.filter(vidraceiro=request.user)
+        p = request.query_params
+        if p.get("produto"):
+            qs = qs.filter(produto_id=p["produto"])
+        for campo in ("largura_mm", "altura_mm"):
+            if p.get(campo):
+                qs = qs.filter(**{campo: p[campo]})
+        lista = [_resumo_peca(x) for x in qs]
+        if p.get("com_saldo"):
+            lista = [x for x in lista if x["saldo"] > 0]
+        return Response(lista)
+
+
+class PecaProntaView(APIView):
+    permission_classes = [IsAuthenticated, RequerPro]
+
+    def get(self, request, peca_id):
+        peca = get_object_or_404(PecaPronta, pk=peca_id, vidraceiro=request.user)
+        dados = _resumo_peca(peca)
+        dados["movimentos"] = [{
+            "id": str(m.id), "quantidade": m.quantidade, "motivo": m.motivo, "motivo_texto": m.get_motivo_display(),
+            "observacao": m.observacao, "projeto": str(m.projeto_id) if m.projeto_id else None,
+            "custo_unitario": str(m.custo_unitario) if m.custo_unitario is not None else None,
+            "criado_em": m.criado_em.isoformat(),
+        } for m in peca.movimentos.all()[:100]]
+        return Response(dados)
+
+    def post(self, request, peca_id):
+        """Contagem (o saldo passa a ser o contado) ou saída (vendida/descartada)."""
+        peca = get_object_or_404(PecaPronta, pk=peca_id, vidraceiro=request.user)
+        motivo = request.data.get("motivo")
+        try:
+            q = int(request.data.get("quantidade"))
+        except (TypeError, ValueError):
+            raise ValidationError({"quantidade": "Informe um número inteiro."})
+        if motivo == "contagem":
+            if q < 0:
+                raise ValidationError({"quantidade": "A contagem não pode ser negativa."})
+            q -= saldo_peca(peca)
+        elif motivo == "saida":
+            if q <= 0:
+                raise ValidationError({"quantidade": "Informe quantas saíram."})
+            q = -q
+        else:
+            raise ValidationError({"motivo": "Use contagem ou saida."})
+        if q:
+            MovimentoPeca.objects.create(peca=peca, quantidade=q, motivo=motivo, observacao=str(request.data.get("observacao", ""))[:200])
+        return Response(_resumo_peca(peca))
+
+
+class SimularProducaoView(APIView):
+    permission_classes = [IsAuthenticated, RequerPro]
+
+    def post(self, request):
+        largura, altura, qtd = _medidas_e_quantidade(request)
+        return Response(simular_producao(request.user, _produto(request), largura, altura, qtd))
+
+
+class ProduzirView(APIView):
+    permission_classes = [IsAuthenticated, RequerPro]
+
+    def post(self, request):
+        largura, altura, qtd = _medidas_e_quantidade(request)
+        peca = produzir(request.user, _produto(request), largura, altura, qtd, str(request.data.get("observacao", ""))[:100])
+        return Response(_resumo_peca(peca), status=201)

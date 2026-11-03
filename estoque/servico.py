@@ -6,7 +6,7 @@ from django.db.models import Sum
 
 from produtos.calculo import calcular_componente, modo
 
-from .models import ConfigItemEstoque, Movimento
+from .models import ConfigItemEstoque, Movimento, MovimentoPeca, PecaPronta
 
 MIL = Decimal(1000)
 CEM = Decimal(100)
@@ -80,8 +80,8 @@ def consumo_das_pecas(projeto, todas=False):
     perda = 1 + (projeto.perda_percentual or 0) / CEM
     total = {}
     for linha in projeto.linhas.prefetch_related("itens__item").all():
-        if not (todas or linha.concluida):
-            continue
+        if not (todas or linha.concluida) or linha.peca_pronta_id:
+            continue  # peças do estoque de prontas saem como peça, não como material
         for it in linha.itens.all():
             c = calcular_componente(
                 it.item, it.coef_largura, it.coef_altura, it.coef_area, it.ajuste,
@@ -120,10 +120,35 @@ def sincronizar_baixas(projeto):
         )
 
 
+def sincronizar_pecas_prontas(projeto):
+    """Como a baixa de material, mas para as peças tiradas do estoque de prontas."""
+    v = projeto.vidraceiro
+    if not v.tem_pro:
+        return
+    todas = projeto.status == "concluido"
+    alvo = {}
+    for linha in projeto.linhas.exclude(peca_pronta__isnull=True):
+        if todas or linha.concluida:
+            alvo[linha.peca_pronta_id] = alvo.get(linha.peca_pronta_id, 0) + linha.quantidade
+    ja = {
+        r["peca"]: -(r["total"] or 0)
+        for r in MovimentoPeca.objects.filter(projeto=projeto, motivo=MovimentoPeca.Motivo.OBRA)
+        .values("peca").annotate(total=Sum("quantidade"))
+    }
+    for peca_id in set(alvo) | set(ja):
+        diferenca = alvo.get(peca_id, 0) - ja.get(peca_id, 0)
+        if diferenca:
+            MovimentoPeca.objects.create(
+                peca_id=peca_id, quantidade=-diferenca, motivo=MovimentoPeca.Motivo.OBRA, projeto=projeto,
+                observacao=(f"Obra: {projeto.nome}" if diferenca > 0 else f"Devolução: {projeto.nome}"),
+            )
+
+
 def tentar_sincronizar(projeto):
     """Para os fluxos do projeto: o estoque nunca pode travar o salvamento."""
     try:
         sincronizar_baixas(projeto)
+        sincronizar_pecas_prontas(projeto)
     except Exception:  # noqa: BLE001
         import logging
 
@@ -166,3 +191,71 @@ def enriquecer_lista_compra(vidraceiro, lista):
             (saldo / fator_compra(item)).quantize(Decimal("0.001")).normalize() if item else saldo, "f"
         )
         x["estoque_texto"] = descrever(item, saldo) if item else ""
+
+
+# ---------- Peças prontas ----------
+
+def materiais_da_producao(vidraceiro, produto, largura_mm, altura_mm, quantidade):
+    """{item: consumo} para produzir N peças, pelas regras do produto (com a perda de corte)."""
+    perda = 1 + (vidraceiro.perda_padrao or 0) / CEM
+    total = {}
+    for comp in produto.componentes.select_related("item").all():
+        c = calcular_componente(
+            comp.item, comp.coef_largura, comp.coef_altura, comp.coef_area, comp.ajuste,
+            largura_mm, altura_mm, quantidade=quantidade, cobranca=comp.cobranca,
+        )
+        q = Decimal(c["consumo"]) * quantidade
+        if modo(comp.item) in ("peca_comprimento", "metro"):
+            q *= perda
+        total[comp.item] = total.get(comp.item, Decimal(0)) + q
+    return total
+
+
+def simular_producao(vidraceiro, produto, largura_mm, altura_mm, quantidade):
+    """Materiais necessários, quanto há em estoque e o custo."""
+    mats = materiais_da_producao(vidraceiro, produto, largura_mm, altura_mm, quantidade)
+    s = saldos(vidraceiro, [i.pk for i in mats])
+    linhas, custo = [], Decimal(0)
+    for item, q in mats.items():
+        medio = custo_medio(vidraceiro, item)
+        custo += q * medio
+        saldo = Decimal(s.get(item.pk, 0))
+        linhas.append({
+            "item": item.pk, "descricao": item.descricao, "precisa": descrever(item, q),
+            "tem": descrever(item, saldo), "falta": saldo < q,
+        })
+    return {"materiais": linhas, "custo_total": str(custo.quantize(Decimal("0.01"))),
+            "custo_unitario": str((custo / quantidade).quantize(Decimal("0.01"))), "falta_algum": any(x["falta"] for x in linhas)}
+
+
+def produzir(vidraceiro, produto, largura_mm, altura_mm, quantidade, observacao=""):
+    """Tira os materiais do estoque e põe as peças prontas, com o custo do material."""
+    peca, _ = PecaPronta.objects.get_or_create(
+        vidraceiro=vidraceiro, produto=produto, largura_mm=largura_mm, altura_mm=altura_mm,
+        observacao=observacao.strip(), defaults={"nome": produto.nome},
+    )
+    mats = materiais_da_producao(vidraceiro, produto, largura_mm, altura_mm, quantidade)
+    custo = Decimal(0)
+    for item, q in mats.items():
+        medio = custo_medio(vidraceiro, item)
+        custo += q * medio
+        Movimento.objects.create(
+            vidraceiro=vidraceiro, item=item, quantidade=-q, custo_unitario=medio, motivo=Movimento.Motivo.PRODUCAO,
+            observacao=f"Produção: {quantidade}x {produto.nome}",
+        )
+    MovimentoPeca.objects.create(
+        peca=peca, quantidade=quantidade, custo_unitario=(custo / quantidade).quantize(Decimal("0.01")),
+        motivo=MovimentoPeca.Motivo.PRODUCAO, observacao=observacao.strip(),
+    )
+    return peca
+
+
+def saldo_peca(peca):
+    return peca.movimentos.aggregate(t=Sum("quantidade"))["t"] or 0
+
+
+def custo_peca(peca):
+    """Custo médio das produções desta peça."""
+    prod = peca.movimentos.filter(quantidade__gt=0, custo_unitario__isnull=False)
+    qtd = sum(m.quantidade for m in prod)
+    return (sum(m.quantidade * m.custo_unitario for m in prod) / qtd).quantize(Decimal("0.01")) if qtd else Decimal(0)

@@ -50,6 +50,8 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None, estoque_usado=
             c["observacao"] = it.get("observacao", "")
             custo_linha += Decimal(c["custo_total"])
             itens.append(c)
+            if ln.get("peca_pronta"):
+                continue  # vem do estoque de prontas: não entra na lista de compra
             a = acumulado.setdefault(it["item"].pk, {"item": it["item"], "consumo": Decimal(0)})
             a["consumo"] += Decimal(c["consumo"]) * qtd
 
@@ -92,11 +94,13 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None, estoque_usado=
         item, consumo = a["item"], a["consumo"]
         m = modo(item)
         sobra = None
+        necessario_m = None
         if m == "peca_comprimento":
             comprimento_m = Decimal(item.comprimento_mm) / MIL
             quantidade = (consumo * fator_perda / comprimento_m).to_integral_value(rounding=ROUND_CEILING)
             unidade_compra = "peça"
             sobra = quantidade * comprimento_m - consumo
+            necessario_m = consumo * fator_perda
         elif m == "metro":
             quantidade = (consumo * fator_perda).quantize(CENTAVO, rounding=ROUND_CEILING)
             unidade_compra = "m"
@@ -111,8 +115,18 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None, estoque_usado=
             unidade_compra = item.unidade.lower()
 
         # O que sai do estoque do vidraceiro não é pedido nem comprado.
-        do_estoque = min(Decimal(str(estoque_usado.get(str(item.pk), 0) or 0)), quantidade)
-        pedir = quantidade - do_estoque
+        informado = Decimal(str(estoque_usado.get(str(item.pk), 0) or 0))
+        if necessario_m is not None:
+            # Perfis: o estoque (em barras, pode ser fração: 0,5 = 3 m) desconta os
+            # METROS necessários, e só o que falta vira barras inteiras a comprar.
+            # Ex: precisa de 3 m e tem 0,5 barra (3 m) -> pedir 0, e não "0,5 barra".
+            do_estoque_m = min(informado * comprimento_m, necessario_m)
+            falta_m = necessario_m - do_estoque_m
+            pedir = (falta_m / comprimento_m).quantize(Decimal("0.0001")).to_integral_value(rounding=ROUND_CEILING)
+            do_estoque = (do_estoque_m / comprimento_m).quantize(Decimal("0.001"))
+        else:
+            do_estoque = min(informado, quantidade)
+            pedir = quantidade - do_estoque
         custo = quantidade * item.preco
         custo_pedir = pedir * item.preco
         custo_compra += custo_pedir
@@ -121,6 +135,7 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None, estoque_usado=
             # Item próprio do vidraceiro: comprado fora do pedido ao fornecedor.
             "proprio": item.fornecedor.vidraceiro_id is not None,
             "fornecedor": item.fornecedor.nome,
+            "tipo": item.tipo,  # perfil, acessório, vedação, vidro, outro
             "codigo": item.codigo,
             "descricao": item.descricao,
             "item_ativo": item.ativo,
@@ -128,6 +143,8 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None, estoque_usado=
             "consumo_total": str(consumo.quantize(MILESIMO)),
             "comprimento_mm": item.comprimento_mm,
             "quantidade_compra": format(quantidade.normalize(), "f"),  # 10 -> "10", 2.50 -> "2.5"
+            # Perfis: metros necessários (com a perda de corte), para a conta do estoque ficar visível.
+            "necessario_m": format(necessario_m.quantize(Decimal("0.01")).normalize(), "f") if necessario_m is not None else None,
             "quantidade_estoque": format(do_estoque.normalize(), "f"),
             "quantidade_pedir": format(pedir.normalize(), "f"),
             "custo_pedir": str(custo_pedir.quantize(CENTAVO)),

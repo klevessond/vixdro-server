@@ -93,6 +93,9 @@ class LinhaProjeto(models.Model):
     quantidade = models.PositiveIntegerField(default=1)
     observacao = models.CharField(max_length=150, blank=True)
     ordem = models.PositiveIntegerField(default=0)
+    # Peça tirada do estoque de prontas (não entra na lista de compra; ao
+    # concluir, sai uma peça pronta em vez dos materiais).
+    peca_pronta = models.ForeignKey("estoque.PecaPronta", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     # Acompanhamento da obra: a peça foi produzida/instalada.
     concluida = models.BooleanField(default=False)
     concluida_em = models.DateTimeField(null=True, blank=True)

@@ -72,8 +72,13 @@ class LinhaSerializer(serializers.ModelSerializer):
         # concluida/concluida_em voltam do app ao salvar: as peças são regravadas
         # a cada salvamento, e sem isso o acompanhamento se perderia.
         fields = ("id", "produto", "nome", "largura_mm", "altura_mm", "quantidade", "observacao", "itens",
-                  "concluida", "concluida_em")
+                  "concluida", "concluida_em", "peca_pronta")
         read_only_fields = ("id",)
+
+    def validate_peca_pronta(self, peca):
+        if peca is not None and peca.vidraceiro_id != self.context["request"].user.pk:
+            raise serializers.ValidationError("Peça pronta não encontrada.")
+        return peca
 
     def validate_produto(self, produto):
         # Produtos do próprio vidraceiro ou modelos prontos (sem dono). A peça só
@@ -215,6 +220,7 @@ class LinhaCalculoSerializer(serializers.Serializer):
     altura_mm = serializers.IntegerField(min_value=0, max_value=20000, default=0)
     quantidade = serializers.IntegerField(min_value=1, max_value=999, default=1)
     itens = ItemCalculoSerializer(many=True)
+    peca_pronta = serializers.UUIDField(required=False, allow_null=True)
 
 
 def _validar_estoque(valor):
