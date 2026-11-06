@@ -60,6 +60,22 @@ class ItemLinhaSerializer(serializers.ModelSerializer):
 
 class LinhaSerializer(serializers.ModelSerializer):
     itens = ItemLinhaSerializer(many=True)
+    # Foto do produto de origem (para a tela do projeto e o PDF do orçamento).
+    produto_imagem_url = serializers.SerializerMethodField()
+    produto_miniatura_url = serializers.SerializerMethodField()
+
+    def _foto(self, obj, campo):
+        from projetos.fotos import url_de
+
+        p = obj.produto
+        return url_de(self.context.get("request"), getattr(p, campo)) if p and getattr(p, campo) else None
+
+    def get_produto_imagem_url(self, obj):
+        return self._foto(obj, "imagem")
+
+    def get_produto_miniatura_url(self, obj):
+        return self._foto(obj, "miniatura")
+
     produto = serializers.PrimaryKeyRelatedField(queryset=Produto.objects.all(), required=False, allow_null=True)
     # Medidas opcionais (0 = não informada): uma peça avulsa pode não ter
     # largura nem altura. O app exige a medida quando algum item depende dela.
@@ -72,7 +88,7 @@ class LinhaSerializer(serializers.ModelSerializer):
         # concluida/concluida_em voltam do app ao salvar: as peças são regravadas
         # a cada salvamento, e sem isso o acompanhamento se perderia.
         fields = ("id", "produto", "nome", "largura_mm", "altura_mm", "quantidade", "observacao", "itens",
-                  "concluida", "concluida_em", "peca_pronta")
+                  "concluida", "concluida_em", "peca_pronta", "produto_imagem_url", "produto_miniatura_url")
         read_only_fields = ("id",)
 
     def validate_peca_pronta(self, peca):

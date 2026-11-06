@@ -61,11 +61,13 @@ class ProdutoViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     @transaction.atomic
     def duplicar(self, request, pk=None):
-        """POST /api/v1/produtos/<id>/duplicar/  cria uma cópia própria (ex: de um modelo pronto)."""
+        """POST /api/v1/produtos/<id>/duplicar/  {"nome"?}  cria uma cópia própria
+        (de um modelo pronto ou de um produto do vidraceiro), com a foto."""
         original = self.get_object()
         nomes = set(Produto.objects.filter(vidraceiro=request.user, ativo=True).values_list("nome", flat=True))
-        # Nome diferente do original, para não ficarem dois iguais lado a lado na lista.
-        base = f"{original.nome} (minha versão)" if original.padrao else f"{original.nome} (cópia)"
+        # Nome escolhido ou, sem ele, diferente do original (para não ficarem dois iguais lado a lado).
+        escolhido = str(request.data.get("nome", "")).strip()[:150]
+        base = escolhido or (f"{original.nome} (minha versão)" if original.padrao else f"{original.nome} (cópia)")
         nome, n = base, 2
         while nome in nomes:
             nome = f"{base} {n}"
@@ -81,6 +83,16 @@ class ProdutoViewSet(viewsets.ModelViewSet):
             )
             for c in original.componentes.all()
         ])
+        # A foto vai junto, como arquivos novos: trocar a da cópia não mexe na do original.
+        if original.imagem:
+            from django.core.files.base import ContentFile
+
+            for campo in ("imagem", "miniatura"):
+                arquivo = getattr(original, campo)
+                if arquivo:
+                    with arquivo.open("rb") as f:
+                        getattr(copia, campo).save("foto.jpg", ContentFile(f.read()), save=False)
+            copia.save(update_fields=["imagem", "miniatura"])
         copia = self.get_queryset().get(pk=copia.pk)
         return Response(self.get_serializer(copia).data, status=status.HTTP_201_CREATED)
 
