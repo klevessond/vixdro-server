@@ -28,9 +28,8 @@ INSTALLED_APPS = [
     "projetos",
     "pedidos",
     "agenda",
-   "financeiro",
-   "estoque",
-
+    "financeiro",
+    "estoque",
 ]
 
 MIDDLEWARE = [
@@ -63,12 +62,14 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
+# Produção usa PostgreSQL. DB_ENGINE existe para rodar os testes num SQLite
+# (DB_ENGINE=django.db.backends.sqlite3 e DB_NAME=caminho do arquivo).
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
+        "ENGINE": config("DB_ENGINE", default="django.db.backends.postgresql"),
         "NAME": config("DB_NAME"),
-        "USER": config("DB_USER"),
-        "PASSWORD": config("DB_PASSWORD"),
+        "USER": config("DB_USER", default=""),
+        "PASSWORD": config("DB_PASSWORD", default=""),
         "HOST": config("DB_HOST", default="localhost"),
         "PORT": config("DB_PORT", default="5432"),
     }
@@ -100,9 +101,17 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     # Limite de tentativas: o servidor esta na internet, isso freia ataques de senha.
     "DEFAULT_THROTTLE_RATES": {
-        "login": "10/min",
+        "login": "10/min",        # por endereço (IP)
+        "login_email": "20/hour",  # por conta, venha de onde vier
         "cadastro": "5/min",
     },
+    # Quantos proxies há na frente do Django (o Nginx = 1). Sem isto, o limite
+    # de tentativas usa o cabeçalho X-Forwarded-For inteiro, que quem ataca
+    # escolhe: bastava mudar o cabeçalho a cada tentativa para nunca ser barrado.
+    "NUM_PROXIES": config("NUM_PROXIES", default=1, cast=int),
+    # Parâmetro inválido (um id que não é UUID, uma data errada) responde 400
+    # com explicação, em vez de erro 500.
+    "EXCEPTION_HANDLER": "config.erros.tratar_excecao",
 }
 
 SIMPLE_JWT = {
@@ -116,11 +125,10 @@ SIMPLE_JWT = {
 
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=Csv())
 
-MEDIA_URL = "media/"
-MEDIA_ROOT = BASE_DIR / "media"
 DATA_UPLOAD_MAX_MEMORY_SIZE = 8 * 1024 * 1024
 
 STATIC_URL = "static/"
+MEDIA_URL = "media/"
 
 # Pastas servidas pelo Nginx (fora do /root, que o Nginx não consegue ler).
 STATIC_ROOT = config("STATIC_ROOT", default=str(BASE_DIR / "staticfiles"))
@@ -133,8 +141,17 @@ CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv())
 # endereços das fotos e logomarcas sairiam com http:// mesmo no HTTPS.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
-# ATENÇÃO: depois de acrescentar estas linhas, APAGUE as duas antigas que
-# elas substituem, para não ficarem duplicadas:
-#   STATIC_ROOT = BASE_DIR / "staticfiles"   (do settings original, abaixo do STATIC_URL)
-#   MEDIA_ROOT = BASE_DIR / "media"          (da etapa da logomarca)
-# Duplicadas não quebram nada (vale a última do arquivo), mas confundem.
+# Cookies do admin só por HTTPS. Vale sempre que DEBUG=False; num servidor de
+# teste sem HTTPS, ponha COOKIES_SEGUROS=False no .env (senão o login do admin
+# não funciona por http://).
+COOKIES_SEGUROS = config("COOKIES_SEGUROS", default=not DEBUG, cast=bool)
+SESSION_COOKIE_SECURE = COOKIES_SEGUROS
+CSRF_COOKIE_SECURE = COOKIES_SEGUROS
+
+# Opcionais, ligados pelo .env de produção (ver env.exemplo):
+#   HSTS_SEGUNDOS: o navegador passa a recusar http:// neste domínio pelo tempo
+#   informado. Comece com 3600 e só depois suba para 31536000 (1 ano).
+#   REDIRECIONAR_HTTPS: o Django redireciona http:// para https://. Só ligue se
+#   o Nginx envia o cabeçalho X-Forwarded-Proto (senão vira redirecionamento sem fim).
+SECURE_HSTS_SECONDS = config("HSTS_SEGUNDOS", default=0, cast=int)
+SECURE_SSL_REDIRECT = config("REDIRECIONAR_HTTPS", default=False, cast=bool)

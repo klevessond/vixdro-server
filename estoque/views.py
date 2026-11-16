@@ -9,6 +9,7 @@ POST /api/v1/estoque/entrada-projeto/                 itens próprios recebidos 
 
 from decimal import Decimal, InvalidOperation
 
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import ValidationError
@@ -28,9 +29,12 @@ Q4 = Decimal("0.0001")
 
 def dec(valor, campo):
     try:
-        return Decimal(str(valor).replace(",", "."))
+        numero = Decimal(str(valor).replace(",", "."))
     except (InvalidOperation, TypeError):
         raise ValidationError({campo: "Informe um número."})
+    if not numero.is_finite():  # "NaN" e "Infinity" são Decimal válidos, mas não são quantidade
+        raise ValidationError({campo: "Informe um número."})
+    return numero
 
 
 def item_do_usuario(request, item_id):
@@ -158,6 +162,9 @@ class EntradaProjetoView(APIView):
 
     permission_classes = [IsAuthenticated, RequerPro]
 
+    # Tudo ou nada: se um item da lista for recusado, os anteriores não ficam
+    # gravados (antes ficavam, e a nova tentativa era barrada como "já recebido").
+    @transaction.atomic
     def post(self, request):
         v = request.user
         projeto = get_object_or_404(Projeto, pk=request.data.get("projeto"), vidraceiro=v)
@@ -167,6 +174,8 @@ class EntradaProjetoView(APIView):
             raise ValidationError({"codigo": "ja_recebido", "detail": "Os itens próprios deste projeto já entraram no estoque."})
         criados = 0
         for linha in request.data.get("itens") or []:
+            if not isinstance(linha, dict):
+                raise ValidationError({"itens": "Formato inválido."})
             item = item_do_usuario(request, linha.get("item"))
             q = dec(linha.get("quantidade"), "quantidade")
             if q <= 0:

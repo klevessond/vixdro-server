@@ -27,11 +27,20 @@ import re
 import unicodedata
 from decimal import Decimal, InvalidOperation
 
+from django.db import transaction
 from django.utils import timezone
 
 from .models import VALORES_TIPO, ItemFornecedor, inferir_tipo
 
 COMPRIMENTO_BARRA_MM = 6000
+# Limites de bom senso: um valor absurdo (erro de digitação, coluna trocada) vira
+# aviso naquela linha, em vez de derrubar a importação inteira no banco.
+PRECO_MAXIMO = Decimal("9999999.99")
+COMPRIMENTO_MAXIMO_MM = 100_000
+
+
+class _PontoEVirgula(csv.excel):
+    delimiter = ";"
 
 # Nomes aceitos para cada coluna da planilha (já sem acento, minúsculos, _ no lugar de espaço).
 APELIDOS = {
@@ -185,8 +194,9 @@ def ler_csv(conteudo: bytes):
     try:
         dialeto = csv.Sniffer().sniff(texto[:2000], delimiters=";,")
     except csv.Error:
-        dialeto = csv.excel
-        dialeto.delimiter = ";"
+        # (Antes isto mudava o separador do csv.excel em si, que é global: depois
+        # da primeira planilha assim, todo CSV lido pelo servidor passava a usar ";".)
+        dialeto = _PontoEVirgula
     leitor = csv.reader(io.StringIO(texto), dialect=dialeto)
     cabecalho = next(leitor, [])
     indice = {}
@@ -242,6 +252,7 @@ def importar_csv(fornecedor, conteudo: bytes, desativar_ausentes=True):
     return importar_arquivo(fornecedor, conteudo, desativar_ausentes)
 
 
+@transaction.atomic  # tudo ou nada: uma falha no meio não deixa o catálogo pela metade
 def gravar(fornecedor, linhas, desativar_ausentes=True):
     agora = timezone.now()
     existentes = {i.codigo: i for i in ItemFornecedor.objects.filter(fornecedor=fornecedor)}
@@ -255,8 +266,9 @@ def gravar(fornecedor, linhas, desativar_ausentes=True):
             continue
         try:
             preco = _preco(ln.get("preco"))
-            if preco < 0:
+            if not preco.is_finite() or preco < 0 or preco > PRECO_MAXIMO:
                 raise InvalidOperation
+            preco = preco.quantize(Decimal("0.01"))
         except (InvalidOperation, ValueError):
             erros.append(f"{ln['rotulo']}: valor inválido ({ln.get('preco')}).")
             continue
@@ -267,8 +279,11 @@ def gravar(fornecedor, linhas, desativar_ausentes=True):
         comp = str(ln.get("comprimento_mm") or "").strip()
         if comp:
             try:
-                informados["comprimento_mm"] = int(Decimal(comp.replace(",", "."))) or None
-            except (InvalidOperation, ValueError):
+                milimetros = int(Decimal(comp.replace(",", ".")))
+                if not 0 <= milimetros <= COMPRIMENTO_MAXIMO_MM:
+                    raise ValueError
+                informados["comprimento_mm"] = milimetros or None
+            except (InvalidOperation, ValueError, OverflowError):
                 erros.append(f"{ln['rotulo']}: comprimento inválido ({comp}).")
                 continue
         tipo = _chave(ln.get("tipo"))

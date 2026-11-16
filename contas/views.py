@@ -1,16 +1,16 @@
 import base64
-import binascii
 import uuid
 from io import BytesIO
 
 from django.core.files.base import ContentFile
-from PIL import Image, UnidentifiedImageError
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.throttling import ScopedRateThrottle, SimpleRateThrottle
+
+from projetos.fotos import FotoInvalida, abrir_imagem
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -37,11 +37,25 @@ def _resposta_com_tokens(vidraceiro, http_status):
     )
 
 
+class LimitePorEmail(SimpleRateThrottle):
+    """Limite de tentativas de login por conta, venha de onde vier.
+    O limite por endereço (IP) não segura quem testa senhas da mesma conta a
+    partir de muitos endereços."""
+
+    scope = "login_email"
+
+    def get_cache_key(self, request, view):
+        email = str(request.data.get("email", "")).strip().lower()[:254]
+        if not email:
+            return None
+        return self.cache_format % {"scope": self.scope, "ident": email}
+
+
 class LoginView(TokenObtainPairView):
     """POST /api/v1/auth/login/  {email, password}"""
 
     serializer_class = LoginSerializer
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ScopedRateThrottle, LimitePorEmail]
     throttle_scope = "login"
 
 
@@ -124,15 +138,11 @@ class LogoView(APIView):
         return Response(self._dados(request))
 
     def post(self, request):
-        texto = str(request.data.get("imagem_base64", ""))
-        if "," in texto[:100]:
-            texto = texto.split(",", 1)[1]  # aceita também "data:image/png;base64,...."
         try:
-            bruto = base64.b64decode(texto, validate=True)
-            with Image.open(BytesIO(bruto)) as original:
-                img = original.copy()
-        except (binascii.Error, ValueError, UnidentifiedImageError):
-            raise ValidationError({"imagem_base64": "Envie uma imagem PNG ou JPEG."})
+            # Mesma conferência das fotos da medição: formato e tamanho.
+            img = abrir_imagem(request.data.get("imagem_base64", ""))
+        except FotoInvalida as e:
+            raise ValidationError({"imagem_base64": str(e)})
 
         img.thumbnail((LOGO_LADO_MAXIMO, LOGO_LADO_MAXIMO))
         if img.mode not in ("RGB", "RGBA"):
@@ -141,10 +151,14 @@ class LogoView(APIView):
         img.save(saida, format="PNG", optimize=True)
 
         usuario = request.user
+        if usuario.logo:
+            usuario.logo.delete(save=False)  # a anterior sai do disco, não fica acumulando
         usuario.logo.save(f"logo-{usuario.pk}.png", ContentFile(saida.getvalue()), save=True)
         return Response(self._dados(request), status=status.HTTP_201_CREATED)
 
     def delete(self, request):
+        if request.user.logo:
+            request.user.logo.delete(save=False)
         request.user.logo = ""
         request.user.save(update_fields=["logo"])
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -154,8 +168,12 @@ class LogoView(APIView):
         logo = request.user.logo
         if not logo:
             return {"logo_url": None, "logo_data_uri": None}
-        with logo.open("rb") as f:
-            conteudo = base64.b64encode(f.read()).decode()
+        try:
+            with logo.open("rb") as f:
+                conteudo = base64.b64encode(f.read()).decode()
+        except FileNotFoundError:
+            # O arquivo sumiu do disco (ex: servidor restaurado sem a pasta media).
+            return {"logo_url": None, "logo_data_uri": None}
         return {
             "logo_url": request.build_absolute_uri(logo.url),
             # Pronto para o PDF: a imagem vai dentro do documento.

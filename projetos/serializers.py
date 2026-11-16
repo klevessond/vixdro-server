@@ -91,6 +91,8 @@ class LinhaSerializer(serializers.ModelSerializer):
                   "concluida", "concluida_em", "peca_pronta", "produto_imagem_url", "produto_miniatura_url",
                   "margem_tipo", "margem_valor")
         read_only_fields = ("id",)
+        # Mesma regra do cálculo (LinhaCalculoSerializer): margem negativa não existe.
+        extra_kwargs = {"margem_valor": {"min_value": 0}}
 
     def validate_peca_pronta(self, peca):
         if peca is not None and peca.vidraceiro_id != self.context["request"].user.pk:

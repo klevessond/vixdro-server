@@ -3,6 +3,9 @@ from django.utils.html import format_html
 
 from .models import Fornecedor, ItemFornecedor, Sincronizacao
 
+# Uma tabela de preços em PDF tem poucos MB; acima disto não é uma.
+IMPORTACAO_TAMANHO_MAXIMO = 20 * 1024 * 1024
+
 
 @admin.register(Fornecedor)
 class FornecedorAdmin(admin.ModelAdmin):
@@ -29,14 +32,22 @@ class FornecedorAdmin(admin.ModelAdmin):
 
     def importar_view(self, request, pk):
         from django.contrib import messages
+        from django.core.exceptions import PermissionDenied
         from django.shortcuts import get_object_or_404, redirect
         from django.template.response import TemplateResponse
 
         from .importacao import importar_arquivo
 
         fornecedor = get_object_or_404(Fornecedor, pk=pk)
-        if request.method == "POST" and request.FILES.get("arquivo"):
-            r = importar_arquivo(fornecedor, request.FILES["arquivo"].read(), bool(request.POST.get("desativar")))
+        # A importação troca preços e desativa itens do catálogo inteiro: exige a
+        # mesma permissão de editar o fornecedor (entrar no admin só não basta).
+        if not self.has_change_permission(request, fornecedor):
+            raise PermissionDenied
+        arquivo = request.FILES.get("arquivo")
+        if request.method == "POST" and arquivo and arquivo.size > IMPORTACAO_TAMANHO_MAXIMO:
+            messages.error(request, "Arquivo grande demais (o limite é 20 MB).")
+        elif request.method == "POST" and arquivo:
+            r = importar_arquivo(fornecedor, arquivo.read(), bool(request.POST.get("desativar")))
             if r.get("erro_geral"):
                 messages.error(request, r["erro_geral"])
             else:

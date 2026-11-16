@@ -10,9 +10,34 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 LADO_FOTO = 1600  # px: dá para ver os detalhes do vão sem pesar
 LADO_MINIATURA = 320
 
+# Só estes formatos são abertos (o Pillow conhece dezenas, alguns antigos e frágeis).
+FORMATOS = ("JPEG", "PNG", "WEBP")
+# Uma imagem pequena em bytes pode ter bilhões de pixels e, ao ser aberta,
+# ocupar toda a memória do servidor. 80 milhões cobre qualquer foto de celular.
+MAXIMO_PIXELS = 80_000_000
+
 
 class FotoInvalida(Exception):
     pass
+
+
+def abrir_imagem(texto):
+    """Imagem (Pillow) a partir do base64 enviado pelo app, já conferida:
+    formato aceito e tamanho que cabe na memória. Lança FotoInvalida."""
+    texto = str(texto or "")
+    if "," in texto[:100]:
+        texto = texto.split(",", 1)[1]  # aceita "data:image/jpeg;base64,..."
+    try:
+        bruto = base64.b64decode(texto, validate=True)
+        with Image.open(BytesIO(bruto), formats=FORMATOS) as original:
+            largura, altura = original.size
+            if largura * altura > MAXIMO_PIXELS:
+                raise FotoInvalida("A imagem é grande demais. Envie uma foto menor.")
+            # Fotos de celular guardam a orientação à parte (EXIF); sem isto,
+            # muitas aparecem deitadas.
+            return ImageOps.exif_transpose(original).copy()
+    except (binascii.Error, ValueError, UnidentifiedImageError, OSError, Image.DecompressionBombError):
+        raise FotoInvalida("Envie uma foto em JPEG ou PNG.")
 
 
 def _jpeg(img, lado, qualidade):
@@ -25,17 +50,7 @@ def _jpeg(img, lado, qualidade):
 
 def processar_base64(texto):
     """Devolve (foto, miniatura) prontas para salvar, a partir do base64 do app."""
-    if "," in texto[:100]:
-        texto = texto.split(",", 1)[1]  # aceita "data:image/jpeg;base64,..."
-    try:
-        bruto = base64.b64decode(texto, validate=True)
-        with Image.open(BytesIO(bruto)) as original:
-            # Fotos de celular guardam a orientação à parte (EXIF); sem isto,
-            # muitas aparecem deitadas.
-            img = ImageOps.exif_transpose(original)
-            img = img.convert("RGB")
-    except (binascii.Error, ValueError, UnidentifiedImageError, OSError):
-        raise FotoInvalida("Envie uma foto em JPEG ou PNG.")
+    img = abrir_imagem(texto).convert("RGB")
     return _jpeg(img, LADO_FOTO, 82), _jpeg(img, LADO_MINIATURA, 75)
 
 

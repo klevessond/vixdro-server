@@ -1,5 +1,7 @@
 import re
 
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as ErroDeValidacaoDjango
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -10,7 +12,6 @@ CAMPOS_PUBLICOS = (
     "cep", "rua", "numero", "complemento", "bairro", "cidade", "estado",
 )
 UFS = {uf for uf, _ in UF_CHOICES}
-SENHA_MINIMA = 6
 
 
 class VidraceiroSerializer(serializers.ModelSerializer):
@@ -38,6 +39,12 @@ class CadastroSerializer(serializers.ModelSerializer):
     class Meta:
         model = Vidraceiro
         fields = CAMPOS_PUBLICOS + ("password",)
+
+    def validate_id(self, valor):
+        # O id vem do app; um repetido daria erro 500 ao gravar.
+        if Vidraceiro.objects.filter(pk=valor).exists():
+            raise serializers.ValidationError("Este identificador já está em uso.")
+        return valor
 
     def validate_email(self, valor):
         valor = valor.strip().lower()
@@ -67,11 +74,14 @@ class CadastroSerializer(serializers.ModelSerializer):
         return valor
 
     def validate(self, attrs):
-        # Sem exigência de senha complexa, só um tamanho mínimo.
-        if len(attrs["password"]) < SENHA_MINIMA:
-            raise serializers.ValidationError(
-                {"password": f"A senha precisa ter pelo menos {SENHA_MINIMA} caracteres."}
-            )
+        # A política de senha é a do settings (AUTH_PASSWORD_VALIDATORS): mínimo de
+        # 8 caracteres, não pode ser só números, nem uma senha muito comum, nem
+        # parecida com o e-mail ou o nome. Antes ela só valia no admin.
+        candidato = Vidraceiro(email=attrs.get("email", ""), nome=attrs.get("nome", ""))
+        try:
+            validate_password(attrs["password"], user=candidato)
+        except ErroDeValidacaoDjango as e:
+            raise serializers.ValidationError({"password": list(e.messages)})
         return attrs
 
     def create(self, validated_data):

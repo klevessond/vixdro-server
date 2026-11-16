@@ -1,7 +1,8 @@
-from datetime import timedelta
 """Criação, envio e acompanhamento de pedidos aos fornecedores."""
 
+import logging
 from collections import defaultdict
+from datetime import timedelta
 from decimal import Decimal
 
 from django.db import transaction
@@ -15,6 +16,8 @@ from projetos.views import calcular_projeto_salvo
 
 from .models import ItemPedido, Pedido
 
+log = logging.getLogger(__name__)
+
 STATUS_DO_FORNECEDOR = {
     "recebido": Pedido.Status.RECEBIDO,
     "em_separacao": Pedido.Status.EM_SEPARACAO,
@@ -26,8 +29,7 @@ STATUS_DO_FORNECEDOR = {
 def criar_pedidos(projeto, vidraceiro):
     if projeto.status != Projeto.Status.APROVADO:
         raise ValidationError("Marque o orçamento como aprovado antes de enviar o pedido.")
-    if projeto.pedidos.exclude(status__in=[Pedido.Status.ERRO, Pedido.Status.CANCELADO]).exists():
-        raise ValidationError("Este projeto já tem pedido enviado ao fornecedor.")
+    _recusar_se_ja_pedido(projeto)
 
     # Só o que falta comprar: o que sai do estoque do vidraceiro não é pedido.
     lista = [x for x in calcular_projeto_salvo(projeto)["lista_compra"] if Decimal(x["quantidade_pedir"]) > 0]
@@ -48,6 +50,12 @@ def criar_pedidos(projeto, vidraceiro):
 
     pedidos = []
     with transaction.atomic():
+        # Trava o projeto e confere de novo: dois toques seguidos em "enviar
+        # pedido" chegam ao mesmo tempo, os dois passavam pela conferência lá de
+        # cima e o fornecedor recebia o pedido em dobro. Com a trava, o segundo
+        # espera o primeiro gravar e é recusado aqui.
+        Projeto.objects.select_for_update().get(pk=projeto.pk)
+        _recusar_se_ja_pedido(projeto)
         # Pedidos anteriores que falharam são substituídos pelos novos.
         projeto.pedidos.filter(status=Pedido.Status.ERRO).delete()
         for fornecedor, linhas in por_fornecedor.items():
@@ -71,6 +79,11 @@ def criar_pedidos(projeto, vidraceiro):
     for pedido in pedidos:
         enviar(pedido)
     return pedidos
+
+
+def _recusar_se_ja_pedido(projeto):
+    if projeto.pedidos.exclude(status__in=[Pedido.Status.ERRO, Pedido.Status.CANCELADO]).exists():
+        raise ValidationError("Este projeto já tem pedido enviado ao fornecedor.")
 
 
 def _payload(pedido):
@@ -139,6 +152,13 @@ def enviar(pedido):
     except NotImplementedError:
         pedido.status = Pedido.Status.ERRO
         pedido.erro = "Este fornecedor ainda não recebe pedidos pelo Orçaminio."
+    except Exception:
+        # Falha inesperada: sem isto o pedido ficava para sempre em "enviando",
+        # sem poder ser reenviado e com o projeto travado. O envio é idempotente
+        # no fornecedor (pelo id), então reenviar depois não duplica.
+        log.exception("Falha inesperada enviando o pedido %s", pedido.pk)
+        pedido.status = Pedido.Status.ERRO
+        pedido.erro = "Não foi possível confirmar o envio. Toque em reenviar."
     pedido.save()
     return pedido
 
