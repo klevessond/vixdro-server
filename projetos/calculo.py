@@ -30,6 +30,7 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None, estoque_usado=
     subtotal = Decimal(0)
     total_mao_de_obra = Decimal(0)
     total_material_com_perda = Decimal(0)
+    total_margem = Decimal(0)
     acumulado = {}  # item.pk -> {"item", "consumo"}
     resultado_linhas = []
     custo_materiais = Decimal(0)
@@ -67,8 +68,18 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None, estoque_usado=
             mao_de_obra = max(area_m2 * Decimal(pr["mao_de_obra_m2"]), Decimal(pr["mao_de_obra_minima"]))
         else:
             mao_de_obra = Decimal(0)
-        preco_unitario = (material_com_perda * fator_margem + mao_de_obra).quantize(CENTAVO)
+        # Margem: a da peça (margem variável) ou, sem ela, a do projeto.
+        tipo_margem = ln.get("margem_tipo") or ""
+        valor_margem = Decimal(str(ln.get("margem_valor") or 0))
+        if tipo_margem == "m2":
+            margem = valor_margem * area_m2  # R$ por m² da peça
+        elif tipo_margem == "percentual":
+            margem = material_com_perda * valor_margem / 100  # % sobre o material
+        else:
+            margem = material_com_perda * (fator_margem - 1)
+        preco_unitario = (material_com_perda + margem + mao_de_obra).quantize(CENTAVO)
         preco_total = preco_unitario * qtd
+        total_margem += margem * qtd
         subtotal += preco_total
         total_mao_de_obra += mao_de_obra * qtd
         total_material_com_perda += material_com_perda * qtd
@@ -82,6 +93,8 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None, estoque_usado=
             "custo_unitario": str(custo_unitario.quantize(CENTAVO)),
             "custo_total": str(custo_linha.quantize(CENTAVO)),
             "mao_de_obra_unitaria": str(mao_de_obra.quantize(CENTAVO)),
+            "margem_unitaria": str(margem.quantize(CENTAVO)),
+            "margem_tipo": tipo_margem,
             "preco_unitario": str(preco_unitario),
             "preco_total": str(preco_total.quantize(CENTAVO)),
             "itens": itens,
@@ -132,8 +145,9 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None, estoque_usado=
         custo_compra += custo_pedir
         lista_compra.append({
             "item": item.pk,
-            # Item próprio do vidraceiro: comprado fora do pedido ao fornecedor.
-            "proprio": item.fornecedor.vidraceiro_id is not None,
+            # Comprado fora do pedido automático: item próprio do vidraceiro ou de
+            # um fornecedor sem integração (catálogo por planilha).
+            "proprio": item.fornecedor.vidraceiro_id is not None or item.fornecedor.adaptador == "manual",
             "fornecedor": item.fornecedor.nome,
             "tipo": item.tipo,  # perfil, acessório, vedação, vidro, outro
             "codigo": item.codigo,
@@ -159,7 +173,6 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None, estoque_usado=
     adicional = Decimal(pr["valor_adicional"])
     desconto = Decimal(pr["desconto"])
     total = max(subtotal + adicional - desconto, Decimal(0))
-    material_com_margem = total_material_com_perda * fator_margem
     orcamento = {
         # O que o cliente vê
         "subtotal": str(subtotal.quantize(CENTAVO)),
@@ -169,7 +182,7 @@ def calcular_projeto(linhas, perda_percentual, precificacao=None, estoque_usado=
         "total": str(total.quantize(CENTAVO)),
         # Só para o vidraceiro
         "material_com_perda": str(total_material_com_perda.quantize(CENTAVO)),
-        "lucro_material": str((material_com_margem - total_material_com_perda).quantize(CENTAVO)),
+        "lucro_material": str(total_margem.quantize(CENTAVO)),
         "mao_de_obra": str(total_mao_de_obra.quantize(CENTAVO)),
     }
 

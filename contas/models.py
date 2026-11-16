@@ -59,6 +59,10 @@ class Vidraceiro(AbstractBaseUser, PermissionsMixin):
     validade_padrao = models.PositiveIntegerField("validade do orçamento (dias)", default=15)
     # Depois de quantos dias sem resposta um orçamento enviado vira lembrete.
     dias_lembrete = models.PositiveIntegerField("lembrar de orçamento parado após (dias)", default=5)
+    # Margem fixa (uma para o orçamento todo) ou variável (escolhida em cada peça).
+    margem_modo = models.CharField(
+        max_length=10, choices=[("fixa", "Fixa"), ("variavel", "Variável, por peça")], default="fixa",
+    )
 
     # Plano da conta. Por enquanto o Pro é liberado à mão, pelo admin.
     plano = models.CharField(

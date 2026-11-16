@@ -88,7 +88,8 @@ class LinhaSerializer(serializers.ModelSerializer):
         # concluida/concluida_em voltam do app ao salvar: as peças são regravadas
         # a cada salvamento, e sem isso o acompanhamento se perderia.
         fields = ("id", "produto", "nome", "largura_mm", "altura_mm", "quantidade", "observacao", "itens",
-                  "concluida", "concluida_em", "peca_pronta", "produto_imagem_url", "produto_miniatura_url")
+                  "concluida", "concluida_em", "peca_pronta", "produto_imagem_url", "produto_miniatura_url",
+                  "margem_tipo", "margem_valor")
         read_only_fields = ("id",)
 
     def validate_peca_pronta(self, peca):
@@ -237,6 +238,8 @@ class LinhaCalculoSerializer(serializers.Serializer):
     quantidade = serializers.IntegerField(min_value=1, max_value=999, default=1)
     itens = ItemCalculoSerializer(many=True)
     peca_pronta = serializers.UUIDField(required=False, allow_null=True)
+    margem_tipo = serializers.ChoiceField(choices=["", "percentual", "m2"], required=False, default="")
+    margem_valor = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0, required=False, allow_null=True)
 
 
 def _validar_estoque(valor):

@@ -1,0 +1,29 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>Importar tabela de preços: {{ fornecedor.nome }}</h1>
+<p>Envie um destes arquivos:</p>
+<ul>
+  <li><strong>PDF da "Lista de Preço Varejo"</strong> (o relatório do sistema CISS, como as tabelas ALUMIFONT, ALUVID,
+    J ANSELMO e acessórios). São lidas as colunas <em>Código, Descrição, Preço Varejo, Embalagem</em> e
+    <em>Fabricante</em>; o estoque do fornecedor é ignorado.</li>
+  <li><strong>Planilha CSV</strong> (no Excel: <em>Salvar como › CSV</em>) com a primeira linha de cabeçalho:
+<pre style="background:#f4f7f6;padding:10px;border-radius:6px">codigo;nome;valor;fabricante
+10422;BX156 LATERAL BOX ACRIL BX113 FOSCO;67,00;ALUMIFONT
+12508;ROLDANA 50MM C/CX 1/2 FERRO CG GONZO;14,99;CG GONZO</pre>
+    Colunas opcionais: <code>unidade</code> (BR, UN, M2…), <code>comprimento_mm</code> e <code>tipo</code>
+    (perfil, acessorio, vedacao, vidro ou outro).</li>
+</ul>
+<p>Como o sistema completa o que a tabela não traz:</p>
+<ul>
+  <li>Itens do grupo <strong>ALUMINIO</strong> viram <strong>perfil de 6000 mm</strong> (preço da barra); vendidos por metro (MT),
+    perfil de 1000 mm; por quilo (KG), "outro"; kits, acessório. Guarnições, borrachas e escovas viram vedação; o resto, acessório.</li>
+  <li>Se uma barra não tiver 6 m, corrija o comprimento (ou o tipo) no item: as próximas importações não desfazem a correção.</li>
+  <li>Itens já cadastrados são atualizados pelo código, mantendo as imagens.</li>
+</ul>
+<form method="post" enctype="multipart/form-data">
+  {% csrf_token %}
+  <p><input type="file" name="arquivo" accept=".pdf,.csv,application/pdf,text/csv" required></p>
+  <p><label><input type="checkbox" name="desativar" checked> Desativar os itens deste fornecedor que não estão no arquivo</label></p>
+  <p><input type="submit" value="Importar" class="default"></p>
+</form>
+{% endblock %}

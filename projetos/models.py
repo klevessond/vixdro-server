@@ -93,6 +93,12 @@ class LinhaProjeto(models.Model):
     quantidade = models.PositiveIntegerField(default=1)
     observacao = models.CharField(max_length=150, blank=True)
     ordem = models.PositiveIntegerField(default=0)
+    # Margem própria da peça (margem variável). Vazio = a margem do projeto.
+    margem_tipo = models.CharField(
+        max_length=10, blank=True, default="",
+        choices=[("", "Do projeto"), ("percentual", "% sobre o material"), ("m2", "R$ por m²")],
+    )
+    margem_valor = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     # Peça tirada do estoque de prontas (não entra na lista de compra; ao
     # concluir, sai uma peça pronta em vez dos materiais).
     peca_pronta = models.ForeignKey("estoque.PecaPronta", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")

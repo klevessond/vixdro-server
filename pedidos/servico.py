@@ -39,10 +39,12 @@ def criar_pedidos(projeto, vidraceiro):
     for x in lista:
         fornecedor = itens[x["item"]].fornecedor
         # Itens próprios do vidraceiro (ex: vidros) são comprados fora: não entram no pedido.
-        if fornecedor.vidraceiro_id is None:
+        # Só os fornecedores integrados recebem pedido automático. Itens próprios e
+        # de fornecedores por planilha são comprados por fora (lista de compra em PDF).
+        if fornecedor.vidraceiro_id is None and fornecedor.integrado:
             por_fornecedor[fornecedor].append(x)
     if not por_fornecedor:
-        raise ValidationError("Este projeto só tem itens próprios, que não são pedidos ao fornecedor.")
+        raise ValidationError("Este projeto só tem itens comprados por fora (próprios ou de fornecedor sem integração): use a lista de compra em PDF.")
 
     pedidos = []
     with transaction.atomic():

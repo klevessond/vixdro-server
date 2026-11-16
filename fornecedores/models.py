@@ -8,6 +8,7 @@ from PIL import Image
 ADAPTADORES = [
     ("padrao_vixdro", "Padrão vixdro (pacote integracao_vixdro)"),
     ("proprio", "Itens próprios de um vidraceiro (sem integração)"),
+    ("manual", "Sem integração: itens por planilha, sem pedido automático"),
 ]
 
 
@@ -35,7 +36,16 @@ class Fornecedor(models.Model):
     )
     # Prazo para pagar os pedidos: o vencimento da conta a pagar criada no envio.
     prazo_pagamento_dias = models.PositiveIntegerField("prazo de pagamento (dias)", default=30)
-    ativo = models.BooleanField(default=True)
+    ativo = models.BooleanField(
+        "exibido no app", default=True,
+        help_text="Desmarcado, o fornecedor e o catálogo dele somem do app (os itens já usados em produtos e "
+        "projetos continuam valendo). Use para mostrar só um fornecedor de perfis por vez.",
+    )
+
+    @property
+    def integrado(self) -> bool:
+        """Tem API: sincroniza o catálogo e recebe pedidos automaticamente."""
+        return self.adaptador == "padrao_vixdro"
 
     # Controle da sincronização
     cursor_sincronizacao = models.DateTimeField(
@@ -84,6 +94,9 @@ class ItemFornecedor(models.Model):
     codigo = models.CharField(max_length=60)
     descricao = models.CharField(max_length=255)
     unidade = models.CharField(max_length=10)
+    # Marca de quem fabrica o item (ex: ALUMIFONT, UDINESE). Vem da tabela de preços
+    # dos fornecedores sem integração; vazio nos demais.
+    fabricante = models.CharField(max_length=80, blank=True, default="")
     comprimento_mm = models.PositiveIntegerField(
         null=True, blank=True,
         help_text="Preenchido quando o item é vendido em peças de comprimento fixo (barras, rolos)",

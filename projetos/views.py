@@ -221,6 +221,7 @@ def calcular_projeto_salvo(projeto):
         {
             "nome": ln.nome, "largura_mm": ln.largura_mm, "altura_mm": ln.altura_mm,
             "peca_pronta": ln.peca_pronta_id,
+            "margem_tipo": ln.margem_tipo, "margem_valor": ln.margem_valor,
             "quantidade": ln.quantidade,
             "itens": [
                 {"item": it.item, "coef_largura": it.coef_largura, "coef_altura": it.coef_altura,

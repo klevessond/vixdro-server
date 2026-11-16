@@ -21,7 +21,8 @@ class ItemCatalogoSerializer(serializers.ModelSerializer):
     class Meta:
         model = ItemFornecedor
         fields = ("id", "fornecedor", "codigo", "descricao", "unidade", "comprimento_mm",
-                  "preco", "estoque", "ativo", "atualizado_em", "imagem_url", "miniatura_url", "tipo")
+                  "preco", "estoque", "ativo", "atualizado_em", "imagem_url", "miniatura_url", "tipo",
+                  "fabricante")
 
     def _url(self, arquivo):
         if not arquivo:

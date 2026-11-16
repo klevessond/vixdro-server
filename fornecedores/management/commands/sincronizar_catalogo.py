@@ -14,7 +14,8 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opcoes):
         # Itens próprios dos vidraceiros não têm de onde sincronizar.
-        fornecedores = Fornecedor.objects.filter(ativo=True, vidraceiro__isnull=True)
+        # Só os integrados (com API): os de planilha são atualizados pela importação no admin.
+        fornecedores = Fornecedor.objects.filter(ativo=True, vidraceiro__isnull=True, adaptador="padrao_vixdro")
         if opcoes["fornecedor"]:
             fornecedores = fornecedores.filter(slug=opcoes["fornecedor"])
             if not fornecedores.exists():

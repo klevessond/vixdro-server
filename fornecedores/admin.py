@@ -6,25 +6,69 @@ from .models import Fornecedor, ItemFornecedor, Sincronizacao
 
 @admin.register(Fornecedor)
 class FornecedorAdmin(admin.ModelAdmin):
-    list_display = ("nome", "slug", "adaptador", "prazo_pagamento_dias", "ativo", "cursor_sincronizacao", "ultima_carga_completa")
+    list_display = ("nome", "slug", "adaptador", "ativo", "importar", "prazo_pagamento_dias", "cursor_sincronizacao", "ultima_carga_completa")
+    list_editable = ("ativo",)
     prepopulated_fields = {"slug": ("nome",)}
     readonly_fields = ("cursor_sincronizacao", "ultima_carga_completa")
+
+    # ---------- Importação por planilha (fornecedores sem integração) ----------
+
+    @admin.display(description="Planilha")
+    def importar(self, obj):
+        if obj.adaptador != "manual":
+            return "—"
+        from django.urls import reverse
+        from django.utils.html import format_html
+
+        return format_html('<a class="button" href="{}">Importar tabela</a>', reverse("admin:fornecedores_importar", args=[obj.pk]))
+
+    def get_urls(self):
+        from django.urls import path
+
+        return [path("<int:pk>/importar/", self.admin_site.admin_view(self.importar_view), name="fornecedores_importar")] + super().get_urls()
+
+    def importar_view(self, request, pk):
+        from django.contrib import messages
+        from django.shortcuts import get_object_or_404, redirect
+        from django.template.response import TemplateResponse
+
+        from .importacao import importar_arquivo
+
+        fornecedor = get_object_or_404(Fornecedor, pk=pk)
+        if request.method == "POST" and request.FILES.get("arquivo"):
+            r = importar_arquivo(fornecedor, request.FILES["arquivo"].read(), bool(request.POST.get("desativar")))
+            if r.get("erro_geral"):
+                messages.error(request, r["erro_geral"])
+            else:
+                messages.success(request, f"{r['criados']} itens novos, {r['alterados']} atualizados, {r['desativados']} desativados.")
+                for erro in r["erros"][:20]:
+                    messages.warning(request, erro)
+                return redirect("admin:fornecedores_fornecedor_changelist")
+        contexto = {**self.admin_site.each_context(request), "fornecedor": fornecedor, "title": f"Importar tabela de preços: {fornecedor.nome}"}
+        return TemplateResponse(request, "admin/fornecedores/importar.html", contexto)
 
 
 @admin.register(ItemFornecedor)
 class ItemFornecedorAdmin(admin.ModelAdmin):
-    list_display = ("foto", "codigo", "descricao", "tipo", "unidade", "comprimento_mm", "preco", "estoque", "ativo", "fornecedor")
+    list_display = ("foto", "codigo", "descricao", "fabricante", "tipo", "unidade", "comprimento_mm", "preco", "ativo", "fornecedor")
     list_display_links = ("foto", "codigo")
     list_filter = ("tipo", "fornecedor", "ativo", "unidade", ("imagem", admin.EmptyFieldListFilter))
-    search_fields = ("codigo", "descricao")
+    search_fields = ("codigo", "descricao", "fabricante")
     list_per_page = 50
     actions = ["copiar_imagem"]
     # O catálogo é espelho do fornecedor: só a imagem é editável aqui. O resto
     # seria desfeito na próxima sincronização.
-    fields = ("previa", "imagem", "codigo", "descricao", "unidade", "comprimento_mm", "preco",
-              "estoque", "ativo", "fornecedor", "atualizado_em")
-    readonly_fields = ("previa", "codigo", "descricao", "unidade", "comprimento_mm", "preco",
-                       "estoque", "ativo", "fornecedor", "atualizado_em")
+    fields = ("previa", "imagem", "codigo", "descricao", "fabricante", "tipo", "unidade", "comprimento_mm",
+              "preco", "estoque", "ativo", "fornecedor", "atualizado_em")
+    readonly_fields = ("previa", "codigo", "descricao", "fabricante", "tipo", "unidade", "comprimento_mm",
+                       "preco", "estoque", "ativo", "fornecedor", "atualizado_em")
+
+    def get_readonly_fields(self, request, obj=None):
+        # Fornecedor por tabela de preços: a tabela não traz o comprimento da barra nem o
+        # tipo com certeza, então a equipe pode corrigir. A próxima importação não desfaz.
+        if obj is not None and obj.fornecedor.adaptador == "manual":
+            return tuple(c for c in self.readonly_fields if c not in ("tipo", "comprimento_mm"))
+        return self.readonly_fields
 
     def has_add_permission(self, request):
         return False
@@ -49,6 +93,10 @@ class ItemFornecedorAdmin(admin.ModelAdmin):
             # O arquivo antigo NÃO é apagado: outros itens (o mesmo perfil em
             # outras cores) podem estar usando a mesma imagem.
             obj.gerar_miniatura()
+        if {"tipo", "comprimento_mm"} & set(form.changed_data):
+            from django.utils import timezone
+
+            obj.atualizado_em = timezone.now()  # o app baixa só o que mudou
         super().save_model(request, obj, form, change)
 
     @admin.action(description="Aplicar a imagem de um item aos outros selecionados")

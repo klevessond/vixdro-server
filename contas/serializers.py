@@ -127,8 +127,9 @@ class PrecosPadraoSerializer(serializers.ModelSerializer):
     perda_padrao = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=0, max_value=50)
     validade_padrao = serializers.IntegerField(min_value=1, max_value=365)
     dias_lembrete = serializers.IntegerField(min_value=1, max_value=60, required=False)
+    margem_modo = serializers.ChoiceField(choices=["fixa", "variavel"], required=False)
 
     class Meta:
         model = Vidraceiro
         fields = ("margem_padrao", "mao_de_obra_m2_padrao", "mao_de_obra_minima_padrao",
-                  "perda_padrao", "validade_padrao", "dias_lembrete")
+                  "perda_padrao", "validade_padrao", "dias_lembrete", "margem_modo")
